@@ -1,0 +1,143 @@
+# 输出 JSON 规范（json-schema）
+
+你每次调用都必须返回**严格合法的 JSON 对象**，不要包含任何 markdown 标记、注释或多余文字。schema 如下：
+
+```json
+{
+  "id": "随机唯一字符串",
+  "type": "general",
+  "title": "题目标题",
+  "topic": "学科 + 题型，由你判断（如：数学-极限 / 数学-概率 / 物理-力学 / 物理-电磁 / 化学-反应 / 计算机-算法 / 统计-对比 等）",
+  "mode": "problem-solving 或 concept-explaining，由你判断（见下）",
+  "question": "完整题干，数学公式用 LaTeX 包裹 \\( ... \\)",
+  "script": {
+    "opening": "开场读题配音文案，口语化，50-100 字",
+    "scenes": [
+      {
+        "text": "本场景解说文字（口语化，20-50字），供你放进 caption 控件",
+        "spokenText": "本帧配音口语逐字稿，禁止数学符号缩写（见 spoken-guide）",
+        "duration": 6,
+        "blocks": [
+          {
+            "type": "从预置美工控件库选择（见 visual-spec）",
+            "...": "按控件类型填对应字段",
+            "pos": { "x": 10, "y": 10, "w": 40, "h": 25 },
+            "animation": "fade | slide-up | zoom | none"
+          }
+        ]
+      }
+    ],
+    "summary": "总结文案，40-80字"
+  }
+}
+```
+
+## 🧑‍🏫 先判断 mode：这是"题目作答"还是"知识点讲解"？
+
+**输入是一条要解的题目（有具体问题要答）→ `mode: "problem-solving"`**，用 4 段式主线。
+**输入是讲解某个概念/定义/定理/公式（无具体要解的题目）→ `mode: "concept-explaining"`**，用讲解式主线。
+mode 判断错了，整片结构就错了，务必先判断清楚。
+
+### 主线 A：problem-solving（题目作答，像老师黑板解题）
+
+1. **题目分析**（第 1 个场景）：展示题干（question-card）+ 分析思路（keypoint 说明突破口），可用 flow 列出完整解题步骤概览。
+2. **题目作答**（中间所有场景）：**做一步写一步**——每个场景专注写一个解题步骤：
+   - 公式推导用 formula-steps（逐步写式子）
+   - 画图用 plot / bar（图也是"写答案"的一部分）
+   - 知识点讲解用 keypoint，易错点用 note
+   - 每一屏都要落在"这道题的解答上"，不要泛泛而谈或堆装饰。
+3. **完整作答**（倒数第 2 个场景）：answer-sheet 一屏呈现整道题的**完整解题步骤 + 最终答案**，像交卷。
+4. **总结**（最后 5 秒，script.summary overlay）：总结方法/关键结论。
+
+### 主线 B：concept-explaining（知识点讲解）
+
+1. **概念引入**（第 1 个场景）：title-card 给出概念名 + 一句话定义，或 question-card 放定义内容。
+2. **分点展开**（中间场景）：每个场景讲一个方面——定义/性质/几何意义/公式推导/例子。用 formula-card / plot / bar / keypoint / note 配合讲解。
+3. **小结**（倒数第 2 个场景）：conclusion 或 keypoint 汇总要点。
+4. **总结**（最后 5 秒，script.summary）：提炼核心。
+
+## 严格要求
+
+1. **scenes 数量**：3-6 个场景。每个场景必须有 `text`、`spokenText`、`duration`、`blocks`。
+2. **时间轴（duration）**：每个场景必须填 `duration`（秒）——**讲解/作答步骤 5-8 秒，完整作答 6-8 秒，总时长 25-60 秒**。系统按你设计的时间轴分配场景时长。
+3. **blocks（核心）**：每个场景由 1-5 个**预置美工控件**组成，**整屏自由排版，没有固定分区**：
+   - 只能使用 visual-spec 控件库中的类型，禁止发明新类型。
+   - 每块必须有 `type`、`pos`。`pos` 是百分比坐标（0-100）：`x/y` 是块左上角位置，`w/h` 是块宽高。块之间**不要重叠**、不要超出画面。
+   - **problem-solving 模式**：每个作答场景必须包含至少 1 个"解析类控件"（formula-steps / plot / bar / keypoint / note），禁止整屏只有标题卡、要点卡、文字堆砌；**倒数第 2 个场景必须含 answer-sheet**。
+   - **concept-explaining 模式**：每个讲解场景至少 1 个内容控件（formula-card / plot / bar / keypoint / note），不用 answer-sheet。
+   - 每场景至少包含 1 个 caption 或 question-card（承载屏幕文字）。
+   - **每 3 个场景至少 1 个图形控件（plot/bar/image/table），理想每 2 个场景 1 个。**
+   - **按学科选控件**（见 visual-spec 的"学科兼容"表）：数学用 plot/bar/formula-steps；物理用 force/circuit/formula-card/table；化学用 molecule/table/formula-card；计算机用 array/tree/graph/table/flow；统计用 bar/table。用不到的控件不要硬塞。
+4. **动画克制（重要）**：默认 `fade` 或 `none`。`zoom` 只用于最终答案；`slide-up` 只用于关键公式。**禁止每个块都用 zoom/slide-up**——过度动效是产品介绍风格，不是讲题风格。
+5. **布局节奏**：像黑板，不是 PPT 发布会。每个场景聚焦一步推导，不要塞满装饰。
+6. **spokenText**：见 spoken-guide.txt，禁止 x^2、lim、∑ 等无法朗读的符号。
+7. **整体**：开场（opening）+ 分步场景（scenes）+ 总结（summary）三者缺一不可。
+
+## 完整示例（极限题：题目分析 → 逐步作答 → 完整作答）
+
+```json
+{
+  "id": "gen-limit-001",
+  "type": "general",
+  "title": "求 lim x→0 (sin x)/x",
+  "topic": "极限",
+  "mode": "problem-solving",
+  "question": "求极限 \\(\\lim_{x \\to 0} \\frac{\\sin x}{x}\\)，并说明其几何意义。",
+  "script": {
+    "opening": "这是一道经典的极限题。当 x 趋近于 0 的时候，sine x 比上 x 的极限等于一。今天我们用图像和泰勒展开两条思路来理解它。",
+    "scenes": [
+      {
+        "text": "先分析题目：这是一个 0/0 型极限",
+        "spokenText": "先分析这道题。当 x 趋近零时，分子和分母都趋近零，这是典型的零比零型极限。",
+        "duration": 6,
+        "blocks": [
+          { "type": "question-card", "subtitle": "极限", "title": "求 lim x→0 (sin x)/x", "content": "求极限 \\(\\lim_{x \\to 0} \\frac{\\sin x}{x}\\)，并说明其几何意义。", "pos": { "x": 5, "y": 6, "w": 40, "h": 55 }, "animation": "fade" },
+          { "type": "keypoint", "title": "突破口", "content": "0/0 型极限，可用几何（单位圆）或泰勒展开求解", "pos": { "x": 50, "y": 10, "w": 44, "h": 26 }, "animation": "fade" },
+          { "type": "flow", "items": ["看图像", "几何解释", "泰勒展开", "完整作答"], "pos": { "x": 50, "y": 42, "w": 44, "h": 18 }, "animation": "fade" },
+          { "type": "caption", "content": "先分析题目：0/0 型极限，关键在于找到合适的求解思路", "pos": { "x": 20, "y": 82, "w": 60, "h": 12 }, "animation": "fade" }
+        ]
+      },
+      {
+        "text": "第一步：看函数图像，猜测极限值",
+        "spokenText": "第一步，我们先画出函数图像。当 x 越来越接近零时，sine x 比上 x 的函数值越来越接近一。",
+        "duration": 7,
+        "blocks": [
+          { "type": "plot", "fx": "sin(x)/x", "xRange": [-8, 8], "yRange": [-0.5, 1.2], "highlightX": 0, "annotations": ["x→0 时 y 趋近 1"], "pos": { "x": 6, "y": 6, "w": 52, "h": 66 }, "animation": "fade" },
+          { "type": "keypoint", "title": "图像观察", "content": "x 接近 0 时，曲线无限逼近水平线 y = 1", "pos": { "x": 62, "y": 12, "w": 32, "h": 28 }, "animation": "fade" },
+          { "type": "caption", "content": "图像告诉我们极限可能是 1，接下来严格证明", "pos": { "x": 20, "y": 82, "w": 60, "h": 12 }, "animation": "fade" }
+        ]
+      },
+      {
+        "text": "第二步：单位圆几何解释",
+        "spokenText": "第二步，从单位圆看。角度很小时，弧长和正弦值几乎重合，所以 sine x 除以 x 趋近于一。",
+        "duration": 7,
+        "blocks": [
+          { "type": "formula-steps", "items": ["\\text{单位圆中：} \\sin x < x < \\tan x", "\\cos x < \\frac{\\sin x}{x} < 1", "\\lim_{x \\to 0} \\frac{\\sin x}{x} = 1"], "pos": { "x": 30, "y": 8, "w": 64, "h": 42 }, "animation": "fade" },
+          { "type": "note", "content": "夹逼定理：由 cos x 和 1 夹住中间，取极限即得", "pos": { "x": 12, "y": 56, "w": 76, "h": 16 }, "animation": "fade" },
+          { "type": "caption", "content": "单位圆加夹逼定理，严谨地推出极限等于 1", "pos": { "x": 20, "y": 82, "w": 60, "h": 12 }, "animation": "fade" }
+        ]
+      },
+      {
+        "text": "第三步：泰勒展开严格证明",
+        "spokenText": "第三步，用泰勒展开严格证明。sine x 展开后第一项是 x，后面的项除以 x 后当 x 趋近零都消失，极限就是一。",
+        "duration": 8,
+        "blocks": [
+          { "type": "formula-card", "content": "\\sin x = x - \\frac{x^3}{3!} + \\frac{x^5}{5!} - \\cdots", "pos": { "x": 12, "y": 6, "w": 76, "h": 24 }, "animation": "fade" },
+          { "type": "formula-steps", "items": ["\\frac{\\sin x}{x} = 1 - \\frac{x^2}{3!} + \\frac{x^4}{5!} - \\cdots", "\\lim_{x \\to 0} \\frac{\\sin x}{x} = 1"], "pos": { "x": 16, "y": 34, "w": 68, "h": 36 }, "animation": "fade" },
+          { "type": "caption", "content": "泰勒展开后除以 x，高次项随 x 趋近 0 消失，极限为 1", "pos": { "x": 18, "y": 78, "w": 64, "h": 12 }, "animation": "fade" }
+        ]
+      },
+      {
+        "text": "完整作答",
+        "spokenText": "最后，我们把完整的解答写出来。关键一步是用单位圆和夹逼定理，或者泰勒展开，得到极限等于一。",
+        "duration": 6,
+        "blocks": [
+          { "type": "answer-sheet", "items": ["分析：0/0 型极限", "单位圆中：\\cos x < \\frac{\\sin x}{x} < 1", "由夹逼定理取极限：\\lim_{x \\to 0} \\frac{\\sin x}{x} = 1", "几何意义：正弦与弧度在 0 附近几乎相等"], "content": "lim x→0 (sin x)/x = 1", "pos": { "x": 6, "y": 4, "w": 88, "h": 80 }, "animation": "fade" },
+          { "type": "caption", "content": "完整作答：极限等于 1，是第一重要极限", "pos": { "x": 20, "y": 86, "w": 60, "h": 10 }, "animation": "fade" }
+        ]
+      }
+    ],
+    "summary": "lim x→0 (sin x)/x = 1 是第一重要极限。图像看趋势、单位圆加夹逼定理、泰勒展开三种方法殊途同归，关键是把它刻进记忆里。"
+  }
+}
+```

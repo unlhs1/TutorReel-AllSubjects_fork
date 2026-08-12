@@ -1,0 +1,190 @@
+# 预置美工控件库（visual-spec）
+
+本系统提供一套**预先设计好样式的美工控件**。你（AI）不发明样式，只从下面的控件库中选择、组合、排版——就像用积木搭 PPT 页面。
+
+每个控件都有三个通用字段：
+- `type`: 控件类型（只能从下表选，禁止发明新类型）
+- `pos`: 百分比坐标 `{ x, y, w, h }`（0-100，x/y 为左上角，w/h 为宽高）
+- `animation`: 入场动画 `fade | slide-up | zoom | none`
+
+## 🎨 自由布局（最重要）
+
+**整个画面就是一张 PPT 画布，没有任何固定分区**（没有左侧题目栏、没有底部台词条）。你在 `pos` 里自由决定每个控件放哪、多大：
+- 题干卡（question-card）建议开场放，或常驻左上角小卡。
+- 屏幕解说文字用 **caption 控件**自行摆放（通常放底部，也可放任意位置）。
+- 图形控件（plot/bar）尽量大，成为场景视觉中心。
+- 控件之间不要重叠（除非刻意叠放）、不要超出画面（x+w ≤ 100，y+h ≤ 100）。
+
+## ⚠️ 图形优先原则
+
+- **每 3 个场景至少 1 个图形控件**（plot/bar/image），理想每 2 个场景 1 个。
+- 推导过程场景必须配图，纯文字场景只用于"开场思路"和"最终结论"。
+
+## 🧑‍🏫 讲解风格（最重要！不是产品介绍）
+
+本视频是**老师讲一道题 / 讲一个知识点**，不是产品宣传片。禁止产品介绍式排版（大标题居中、渐变横幅、空泛口号、每屏堆动画）。
+
+**先判断 mode，再选主线**：
+- **problem-solving（题目作答）**：输入是"要解的题目"。主线是**做一步写一步的完整解答**，全片 4 段式：
+  1. **题目分析**（第 1 屏）：question-card 展示题干 + keypoint 分析突破口 + flow 步骤概览。
+  2. **题目作答**（中间每屏）：**做一步写一步**——每屏写一个解题步骤：formula-steps 写推导、plot/bar 画图、keypoint 讲知识点、note 标易错。flow 常驻角落显示进度。
+  3. **完整作答**（倒数第 2 屏）：answer-sheet 一屏呈现完整解题步骤 + 最终答案。
+  4. **总结**（最后 5 秒）：script.summary 收尾。
+- **concept-explaining（知识点讲解）**：输入是"讲解某概念/定义/定理/公式"，无具体要解的题。主线：
+  1. **概念引入**（第 1 屏）：title-card 或 question-card 给出概念名 + 定义。
+  2. **分点展开**（中间每屏）：每屏讲一个方面（定义/性质/几何/公式/例子），用 formula-card / plot / bar / keypoint / note。
+  3. **小结**（倒数第 2 屏）：conclusion 或 keypoint 汇总要点。
+  4. **总结**（最后 5 秒）：script.summary。
+
+**动画克制**：默认 `fade` 或 `none`，像黑板内容自然呈现。`zoom` 只用于最终答案，`slide-up` 只用于关键公式。禁止每个块都 zoom/slide-up。
+
+## 控件库
+
+### 1. question-card —— 题干卡（展示题目）
+字段：`subtitle`（题目类型标签，如"极限"）、`title`（题目标题）、`content`（完整题干，可含 \(...\) 公式）
+```json
+{ "type": "question-card", "subtitle": "极限", "title": "求 lim x→0 (sin x)/x", "content": "求极限 \\(\\lim_{x \\to 0} \\frac{\\sin x}{x}\\)，并说明其几何意义。", "pos": { "x": 6, "y": 8, "w": 42, "h": 50 }, "animation": "fade" }
+```
+
+### 2. title-card —— 标题卡（开场/新阶段）
+字段：`subtitle`（顶部小标签）、`title`（大标题）、`content`（副标题说明）
+```json
+{ "type": "title-card", "subtitle": "第 1 步 · 建模", "title": "泊松近似", "content": "n 很大、p 很小时，二项分布可用泊松分布近似", "pos": { "x": 8, "y": 12, "w": 84, "h": 34 }, "animation": "fade" }
+```
+
+### 3. keypoint —— 要点卡（分步要点）
+字段：`title`（要点标题）、`content`（一句话说明）
+```json
+{ "type": "keypoint", "title": "为什么要用泊松分布", "content": "二项分布参数太大没法手算，泊松能把问题简化", "pos": { "x": 8, "y": 30, "w": 50, "h": 30 }, "animation": "slide-up" }
+```
+
+### 4. caption —— 台词条（屏幕解说文字）
+**每个场景至少放 1 个**，用它展示本场景的讲解文字。位置自定（通常底部居中）。
+字段：`content`（解说文字，可含公式）
+```json
+{ "type": "caption", "content": "先看图像：当 x 趋近 0 时，函数值趋近 1", "pos": { "x": 18, "y": 82, "w": 64, "h": 12 }, "animation": "fade" }
+```
+
+### 5. note —— 提示条（易错点/技巧）
+字段：`content`（提示文字）
+```json
+{ "type": "note", "content": "泊松分布的条件是 n 至少 100、p 小于 0.1", "pos": { "x": 10, "y": 65, "w": 80, "h": 18 }, "animation": "fade" }
+```
+
+### 6. conclusion —— 结论横幅（最终答案）
+字段：`content`（结论文字，可含公式）
+```json
+{ "type": "conclusion", "content": "P(X≤70) ≈ 0.9976", "pos": { "x": 15, "y": 35, "w": 70, "h": 30 }, "animation": "zoom" }
+```
+
+### 7. formula-card —— 公式卡（关键公式）
+字段：`content`（LaTeX 公式）。系统会自动缩放保证公式完整显示、不会超出卡片。
+```json
+{ "type": "formula-card", "content": "\\lambda = np = 10000 \\times 0.005 = 50", "pos": { "x": 20, "y": 30, "w": 60, "h": 30 }, "animation": "zoom" }
+```
+
+### 8. formula-steps —— 公式推导（多步推导逐步显现）
+字段：`items`（LaTeX 行数组，按顺序逐步出现）。每行自动缩放，不会超框。
+```json
+{ "type": "formula-steps", "items": ["X \\sim B(10000, 0.005)", "\\lambda = np = 50", "P(X \\le k) \\approx \\sum_{i=0}^{k} \\frac{e^{-50} 50^i}{i!}"], "pos": { "x": 30, "y": 10, "w": 60, "h": 70 }, "animation": "slide-up" }
+```
+
+### 9. flow —— 流程箭头（解题步骤概览）
+字段：`items`（步骤名数组，2-5 个，随讲解进度逐个高亮）
+```json
+{ "type": "flow", "items": ["建模", "近似", "求概率"], "pos": { "x": 10, "y": 60, "w": 80, "h": 20 }, "animation": "fade" }
+```
+
+### 10. plot —— 函数曲线图（数学题主力图形）
+适合：函数图像、极限、导数切线、积分面积。
+字段：`fx`、`xRange`、`yRange`、`highlightX`（重点 x，可省）、`points`（特殊点 [[x,y],...]，可省）、`annotations`（标注文字，可省）
+`fx` 仅支持 x 变量和：`+ - * / ^ ( ) sin cos tan exp ln sqrt abs` 及常量 `pi`。
+```json
+{ "type": "plot", "fx": "sin(x)/x", "xRange": [-8, 8], "yRange": [-0.5, 1.2], "highlightX": 0, "annotations": ["x→0 时趋近 1"], "pos": { "x": 8, "y": 15, "w": 52, "h": 60 }, "animation": "zoom" }
+```
+
+### 11. bar —— 柱状图（概率分布/数据对比）
+字段：`barData`（柱高数组）、`labels`（柱标签数组）、`highlightIndex`（高亮柱下标，可省）、`annotations`（标注文字，可省）
+```json
+{ "type": "bar", "barData": [3, 5, 7, 8, 6, 4], "labels": ["40", "45", "50", "55", "60", "65"], "highlightIndex": 2, "annotations": ["λ=50 处概率最大"], "pos": { "x": 40, "y": 15, "w": 55, "h": 65 }, "animation": "slide-up" }
+```
+
+### 12. image —— 题目自带插图
+字段：`imageRef`（题目插图 id，如 "fig1"）
+**你会收到每张插图的文字描述**（几何关系/标注/数值），解题必须依据描述正确理解图；渲染时此控件显示原图。
+**尺寸要求**：`pos.w ≥ 45`、`pos.h ≥ 38`。插图是画面主角，**高度不足会把图压扁看不清**——务必给足够大的高度，不要放成小方块或扁条。若图是横向的（宽>高），给大宽度 + 大高度（如 w:55 h:42），让曲线/图形清晰可读。
+```json
+{ "type": "image", "imageRef": "fig1", "pos": { "x": 6, "y": 10, "w": 55, "h": 45 }, "animation": "fade" }
+```
+
+### 13. answer-sheet —— 完整作答卡（片尾必用）
+**最后一个场景必须用它**：把整道题的完整解题步骤 + 最终答案一屏呈现（像交卷）。
+字段：`items`（完整解题步骤行数组，含 LaTeX）、`content`（最终答案）
+```json
+{ "type": "answer-sheet", "items": ["设 X 为死亡人数，X \\sim B(10000, 0.005)", "\\lambda = np = 50", "P(X \\le 70) \\approx \\sum_{k=0}^{70} \\frac{e^{-50}50^k}{k!}", "查表得 P(X \\le 70) \\approx 0.9976"], "content": "P(X≤70) ≈ 0.9976", "pos": { "x": 8, "y": 6, "w": 84, "h": 78 }, "animation": "fade" }
+```
+
+### 14. table —— 表格卡（对比表/性质表/复杂度表）
+跨学科通用：CS 复杂度对比、化学元素/反应表、物理公式汇总、统计对比。
+字段：`title`（表标题，可省）、`headers`（表头数组）、`rows`（行数组，每行与表头列数一致）、`highlightRow`（高亮行下标，可省）
+```json
+{ "type": "table", "title": "算法复杂度对比", "headers": ["算法", "最好", "最坏"], "rows": [["冒泡排序", "O(n)", "O(n²)"], ["快速排序", "O(n log n)", "O(n²)"], ["归并排序", "O(n log n)", "O(n log n)"]], "highlightRow": 2, "pos": { "x": 12, "y": 10, "w": 76, "h": 50 }, "animation": "fade" }
+```
+
+### 15. force —— 受力分析图（物理）
+字段：`forces`（力数组 `{ name, angle, magnitude }`：angle 度数，0=水平向右、逆时针为正；magnitude 相对大小）、`title`/`content`（物体名，可省）
+```json
+{ "type": "force", "title": "m", "forces": [{ "name": "重力 G", "angle": 270, "magnitude": 10 }, { "name": "支持力 N", "angle": 90, "magnitude": 10 }, { "name": "摩擦力 f", "angle": 180, "magnitude": 3 }], "pos": { "x": 20, "y": 15, "w": 60, "h": 55 }, "animation": "fade" }
+```
+
+### 16. circuit —— 电路图（物理，串联直流）
+字段：`elements`（元件数组，按串联顺序 `{ type: battery|resistor|bulb|switch, label? }`）
+```json
+{ "type": "circuit", "elements": [{ "type": "battery", "label": "12V" }, { "type": "resistor", "label": "R=4Ω" }, { "type": "bulb", "label": "L" }, { "type": "switch", "label": "S" }], "pos": { "x": 15, "y": 20, "w": 70, "h": 50 }, "animation": "fade" }
+```
+
+### 17. molecule —— 分子结构图（化学）
+字段：`atoms`（原子数组 `{ id, element }`）、`bonds`（化学键 `{ from, to, order? }`，order=1 单键 / 2 双键）
+```json
+{ "type": "molecule", "atoms": [{ "id": "o", "element": "O" }, { "id": "h1", "element": "H" }, { "id": "h2", "element": "H" }], "bonds": [{ "from": "o", "to": "h1" }, { "from": "o", "to": "h2" }], "pos": { "x": 25, "y": 20, "w": 50, "h": 50 }, "animation": "fade" }
+```
+
+### 18. array —— 数组可视化（计算机）
+字段：`values`（值数组）、`highlightIndexes`（高亮下标，可省）
+```json
+{ "type": "array", "values": [3, 1, 4, 1, 5, 9], "highlightIndexes": [2], "pos": { "x": 10, "y": 30, "w": 80, "h": 40 }, "animation": "fade" }
+```
+
+### 19. tree —— 树可视化（计算机/数学，自动分层）
+字段：`nodes`（节点 `{ id, label }`）、`edges`（边 `{ from, to, dashed? }`）
+```json
+{ "type": "tree", "nodes": [{ "id": "a", "label": "8" }, { "id": "b", "label": "3" }, { "id": "c", "label": "10" }, { "id": "d", "label": "1" }], "edges": [{ "from": "a", "to": "b" }, { "from": "a", "to": "c" }, { "from": "b", "to": "d" }], "pos": { "x": 20, "y": 10, "w": 60, "h": 60 }, "animation": "fade" }
+```
+
+### 20. graph —— 图/网状可视化（计算机/图论，圆形布局）
+字段：`nodes`、`edges`（同 tree，可带 `label` 边标签）
+```json
+{ "type": "graph", "nodes": [{ "id": "a", "label": "A" }, { "id": "b", "label": "B" }, { "id": "c", "label": "C" }], "edges": [{ "from": "a", "to": "b" }, { "from": "b", "to": "c" }, { "from": "c", "to": "a" }], "pos": { "x": 20, "y": 15, "w": 60, "h": 55 }, "animation": "fade" }
+```
+
+## 🌐 学科兼容（按学科选控件，借鉴 TheoremExplainAgent）
+
+不同学科的画面重点不同，按学科选择控件组合：
+
+| 学科 | topic 示例 | 推荐控件 |
+|------|-----------|---------|
+| 数学 | 极限/导数/积分/概率/几何/代数 | plot、bar、formula-steps、formula-card、keypoint、note |
+| 物理 | 力学/电磁/光学/热学 | **force（受力分析）、circuit（电路）**、formula-card（公式）、bar（数据对比）、plot（轨迹/函数） |
+| 化学 | 化学计算/反应/结构 | **molecule（分子结构）**、table（元素/反应表）、formula-card（化学式）、keypoint、note |
+| 计算机 | 算法/数据结构/复杂度 | **array（数组）、tree（树）、graph（图）**、table（复杂度对比）、flow（算法流程）、keypoint、note |
+| 统计/经济 | 统计/概率/经济 | bar、table（数据对比）、keypoint |
+
+通用原则：推导用 formula-steps、画图用 plot/bar、对比用 table、要点用 keypoint、易错用 note、流程用 flow、收尾用 answer-sheet/conclusion。用不到的控件类型不要硬塞。
+
+## 排版原则
+1. 每场景 1-5 个控件，不要堆太多。
+2. **每场景必须有 caption 或 question-card**（至少一个承载文字的控件），其余控件自由搭配。
+3. 图形控件尽量大（w≥45、h≥55），文字控件小而精。
+4. 节奏按讲解逻辑走：开场题干+思路概览 → 中间逐步解析（每屏一步，配图）→ 片尾 answer-sheet 完整作答。
+5. 双控件布局常用：图形在左（pos x:8 w:52），文字在右（pos x:64 w:30）。
+6. 关键内容用 `zoom` 或 `slide-up`，普通内容 `fade`。不要用产品介绍式的浮夸动画。

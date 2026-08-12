@@ -1,0 +1,45 @@
+node_modules
+dist
+.DS_Store
+.env
+.env.local
+.env.*.local
+
+# Remotion & Build output
+out
+build
+dist-app
+dist-electron
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Public generated files
+public/voiceover/*.mp3
+public/audio/*.mp3
+
+# npm local cache (should not be in project root)
+npm-cache/
+
+# Vercel & Trae
+.vercel
+.trae
+.boss
+
+# IDEs and Editors
+.idea
+.vscode
+*.suo
+*.ntvs
+*.njsproj
+*.sln
+*.sw?
+
+# OS generated files
+Thumbs.db
+
+# OCR 运行时产物（题目插图裁剪）
+public/question-figures/
