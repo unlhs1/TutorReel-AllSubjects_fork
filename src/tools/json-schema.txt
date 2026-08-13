@@ -71,7 +71,8 @@ mode 判断错了，整片结构就错了，务必先判断清楚。
 4. **动画克制（重要）**：默认 `fade` 或 `none`。`zoom` 只用于最终答案；`slide-up` 只用于关键公式。**禁止每个块都用 zoom/slide-up**——过度动效是产品介绍风格，不是讲题风格。
 5. **布局节奏**：像黑板，不是 PPT 发布会。每个场景聚焦一步推导，不要塞满装饰。
 6. **spokenText**：见 spoken-guide.txt，禁止 x^2、lim、∑ 等无法朗读的符号。
-7. **整体**：开场（opening）+ 分步场景（scenes）+ 总结（summary）三者缺一不可。
+7. **图表克制（重要）**：图形是辅助不是装饰。**同一道题优先只用一个图形控件**（数学题通常 plot 或 image），**禁止各种图表都用一遍**（不要轮流塞 bar+plot+flow+table 凑数）；每类图表全片最多一次。**"每 3 场景至少 1 个图形"是下限不是上限**——达到下限后专心讲推导，不要再加新图。
+8. **整体**：开场（opening）+ 分步场景（scenes）+ 总结（summary）三者缺一不可。
 
 ## 完整示例（极限题：题目分析 → 逐步作答 → 完整作答）
 
@@ -102,7 +103,7 @@ mode 判断错了，整片结构就错了，务必先判断清楚。
         "spokenText": "第一步，我们先画出函数图像。当 x 越来越接近零时，sine x 比上 x 的函数值越来越接近一。",
         "duration": 7,
         "blocks": [
-          { "type": "plot", "fx": "sin(x)/x", "xRange": [-8, 8], "yRange": [-0.5, 1.2], "highlightX": 0, "annotations": ["x→0 时 y 趋近 1"], "pos": { "x": 6, "y": 6, "w": 52, "h": 66 }, "animation": "fade" },
+          { "type": "plot", "fx": "sin(x)/x", "xRange": [-8, 8], "yRange": [-0.5, 1.2], "traceX": { "from": -6, "to": 0 }, "annotations": ["点沿曲线逼近 x→0，y 趋近 1"], "pos": { "x": 6, "y": 6, "w": 52, "h": 66 }, "animation": "fade" },
           { "type": "keypoint", "title": "图像观察", "content": "x 接近 0 时，曲线无限逼近水平线 y = 1", "pos": { "x": 62, "y": 12, "w": 32, "h": 28 }, "animation": "fade" },
           { "type": "caption", "content": "图像告诉我们极限可能是 1，接下来严格证明", "pos": { "x": 20, "y": 82, "w": 60, "h": 12 }, "animation": "fade" }
         ]

@@ -9,10 +9,12 @@ interface Props {
 }
 
 // 流程箭头：步骤1 → 步骤2 → 步骤3，当前步骤高亮
+// 高亮节奏放缓（pow 1.3）：前几步停留更久，匹配讲解节奏，避免动画快于配音
 export const FlowCard: React.FC<Props> = ({ block, theme, progress }) => {
   const steps = (block.items && block.items.length ? block.items : []).filter(Boolean);
   if (steps.length === 0) return null;
-  const current = Math.min(steps.length - 1, Math.floor(progress * steps.length));
+  const slow = Math.pow(Math.min(1, Math.max(0, progress)), 1.3);
+  const current = Math.min(steps.length - 1, Math.floor(slow * steps.length));
   return (
     <div style={{
       width: '100%', height: '100%', boxSizing: 'border-box',

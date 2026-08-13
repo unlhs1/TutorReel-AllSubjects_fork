@@ -199,6 +199,9 @@ export interface Block {
   yRange?: [number, number];
   highlightX?: number | null;
   points?: Array<[number, number]>;
+  // plot 动态增强（"活起来"动画，Remotion interpolate 驱动，无需 Manim）
+  animParam?: { name: string; from: number; to: number };  // 参数动画：fx 里的参数 name 随场景进度从 from 平滑变到 to，曲线形态实时演变
+  traceX?: { from: number; to: number };                   // 轨迹点：高亮点沿曲线从 x=from 滑到 x=to（极限逼近/切线滑动演示）
   barData?: number[];                 // bar: 柱高
   labels?: string[];                  // bar: 柱标签
   highlightIndex?: number;

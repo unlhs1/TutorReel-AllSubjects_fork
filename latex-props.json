@@ -1,0 +1,34 @@
+{
+  "data": {
+    "id": "latex-test-001",
+    "type": "general",
+    "title": "LaTeX 渲染测试",
+    "topic": "磁场",
+    "mode": "problem-solving",
+    "question": "测试",
+    "durationInFrames": 570,
+    "script": {
+      "opening": "测试 LaTeX 渲染",
+      "scenes": [
+        {
+          "text": "完整作答",
+          "spokenText": "完整作答",
+          "duration": 6,
+          "blocks": [
+            { "type": "answer-sheet", "items": ["直导线在 O 点：B_{\\text{直}} = \\frac{\\mu_0 I}{2\\pi R}，垂直纸面向里", "圆环在 O 点：B_{\\text{环}} = \\frac{\\mu_0 I}{2R}，垂直纸面向外", "两磁场方向相反，合场：B = B_{\\text{环}} - B_{\\text{直}}", "B = \\frac{\\mu_0 I}{2R} - \\frac{\\mu_0 I}{2\\pi R} = \\frac{\\mu_0 I(1-\\frac{1}{\\pi})}{2R}"], "content": "B = \\frac{\\mu_0 I(1-\\frac{1}{\\pi})}{2R}，选 D", "pos": { "x": 6, "y": 4, "w": 88, "h": 80 }, "animation": "fade" }
+          ]
+        },
+        {
+          "text": "结论",
+          "spokenText": "结论",
+          "duration": 5,
+          "blocks": [
+            { "type": "conclusion", "content": "答案：B = \\frac{\\mu_0 I(1-\\frac{1}{\\pi})}{2R}", "pos": { "x": 15, "y": 25, "w": 70, "h": 40 }, "animation": "fade" }
+          ]
+        }
+      ],
+      "summary": "测试完成"
+    }
+  },
+  "isDark": false
+}

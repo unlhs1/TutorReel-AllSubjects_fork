@@ -1,0 +1,53 @@
+{
+  "data": {
+    "id": "anim-test-001",
+    "type": "general",
+    "title": "动态动画测试",
+    "topic": "极限",
+    "mode": "problem-solving",
+    "question": "动态动画验证",
+    "durationInFrames": 1080,
+    "script": {
+      "opening": "测试动态动画",
+      "scenes": [
+        {
+          "text": "第一步 画抛物线",
+          "spokenText": "先画抛物线",
+          "duration": 6,
+          "blocks": [
+            { "type": "plot", "fx": "x^2", "xRange": [-3, 3], "yRange": [-1, 9], "pos": { "x": 8, "y": 8, "w": 60, "h": 70 }, "animation": "fade" },
+            { "type": "caption", "content": "y = x²", "pos": { "x": 20, "y": 82, "w": 60, "h": 12 }, "animation": "fade" }
+          ]
+        },
+        {
+          "text": "第二步 变换为正弦",
+          "spokenText": "曲线变形为正弦",
+          "duration": 8,
+          "blocks": [
+            { "type": "plot", "fx": "sin(x)", "xRange": [-6, 6], "yRange": [-1.5, 1.5], "traceX": { "from": -5, "to": 0 }, "annotations": ["点沿曲线逼近 0"], "pos": { "x": 8, "y": 8, "w": 60, "h": 70 }, "animation": "fade" },
+            { "type": "caption", "content": "morph + 轨迹滑动", "pos": { "x": 20, "y": 82, "w": 60, "h": 12 }, "animation": "fade" }
+          ]
+        },
+        {
+          "text": "第三步 振幅变化",
+          "spokenText": "振幅从一涨到五",
+          "duration": 8,
+          "blocks": [
+            { "type": "plot", "fx": "a*sin(x)", "animParam": { "name": "a", "from": 1, "to": 5 }, "xRange": [-6, 6], "yRange": [-5.5, 5.5], "annotations": ["振幅 a 从 1 变 5"], "pos": { "x": 8, "y": 8, "w": 60, "h": 70 }, "animation": "fade" },
+            { "type": "caption", "content": "参数动画", "pos": { "x": 20, "y": 82, "w": 60, "h": 12 }, "animation": "fade" }
+          ]
+        },
+        {
+          "text": "完整作答",
+          "spokenText": "测试完成",
+          "duration": 6,
+          "blocks": [
+            { "type": "answer-sheet", "items": ["测试动态动画"], "content": "验证完成", "pos": { "x": 8, "y": 6, "w": 84, "h": 78 }, "animation": "fade" }
+          ]
+        }
+      ],
+      "summary": "动态动画验证完成"
+    }
+  },
+  "isDark": true
+}

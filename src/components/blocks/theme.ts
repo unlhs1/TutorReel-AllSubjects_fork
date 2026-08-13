@@ -96,13 +96,44 @@ export function renderMixedLatex(text: string): string {
   }
   html += escapeHtml(text.slice(lastIndex));
 
-  // 裸公式容错：无包裹标记、含 LaTeX 命令、无中文 → 整段按公式渲染。
+  // 裸公式容错：无包裹标记但含 LaTeX 命令时，做智能分段——中文串当文字、含命令的非中文串当公式渲染。
+  // 解决 LLM 不包 \(...\) 时（如 B_{\text{直}} = \frac{\mu_0 I}{2\pi R}）公式裸显为源码的问题。
   // katex 输出 HTML 总含 <annotation> 原始 LaTeX（含反斜杠），故用 katex-error 类判断成功与否。
-  if (!matched && /\\[a-zA-Z]+/.test(text) && !/[\u4e00-\u9fff]/.test(text)) {
-    const candidate = renderLatex(text, false);
-    if (candidate && !candidate.includes('katex-error')) return candidate;
+  if (!matched && /\\[a-zA-Z]+/.test(text)) {
+    const segmented = renderBareLatexSegments(text);
+    if (segmented) return segmented;
   }
   return html;
+}
+
+// 智能分段渲染"中文 + 裸 LaTeX 公式"混合文本：
+// 1. 先保护 \cmd{...}（尤其 \text{中文}）不让中文切分破坏公式；
+// 2. 按中文字符串切分；非中文且含 \ 命令的块尝试 katex 渲染，其余 escape；
+// 3. 中文字块原样保留为文字。若没有任何公式块渲染成功则返回 null（调用方回退纯文本）。
+function renderBareLatexSegments(text: string): string | null {
+  const placeholders: string[] = [];
+  const protectedText = text.replace(/\\[a-zA-Z]+\{[^}]*\}/g, (m) => {
+    placeholders.push(m);
+    return `\u0001${placeholders.length - 1}\u0001`;
+  });
+  // 中文字符 + 中文标点（含全角）作为文字块
+  const parts = protectedText.split(/([\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]+)/g);
+  const out: string[] = [];
+  let renderedAny = false;
+  for (const part of parts) {
+    if (!part) continue;
+    if (/[\u4e00-\u9fff]/.test(part)) { out.push(escapeHtml(part)); continue; }
+    const restored = part.replace(/\u0001(\d+)\u0001/g, (_, idx: string) => placeholders[Number(idx)]);
+    if (!/\\[a-zA-Z]/.test(restored)) { out.push(escapeHtml(restored)); continue; }
+    const candidate = renderLatex(restored, false);
+    if (candidate && !candidate.includes('katex-error')) {
+      out.push(candidate);
+      renderedAny = true;
+    } else {
+      out.push(escapeHtml(restored));
+    }
+  }
+  return renderedAny ? out.join('') : null;
 }
 
 // ── 公式自适应缩放（避免公式超框被吞） ──

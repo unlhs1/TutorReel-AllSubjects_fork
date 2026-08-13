@@ -143,6 +143,15 @@ export function parseFunction(expr: string): (x: number) => number {
   return result;
 }
 
+// 替换表达式中的动态参数为数值字面量（用于参数动画）。
+// 用字母/数字边界匹配，避免误替换函数名（abs/tan/exp 等）或数字拼接（2a）。
+// 支持任意参数名（如 a / k / w / amp），匹配后由原解析器按普通数字处理。
+export function substituteParam(expr: string, name: string, value: number): string {
+  const re = new RegExp(`(?<![a-z0-9])${name}(?![a-z0-9])`, 'ig');
+  const num = value.toFixed(6).replace(/\.?0+$/, '');
+  return expr.replace(re, num);
+}
+
 export function evalAt(expr: string, x: number): number | null {
   try {
     const f = parseFunction(expr);

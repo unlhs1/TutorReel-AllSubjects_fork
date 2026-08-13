@@ -497,10 +497,11 @@ ${TOOLS_PROMPT}
 2. 输出必须严格符合 json-schema 中定义的完整结构：id、type(固定为"general")、title、topic、mode、question、script.opening、script.scenes(3-6个场景，每场景含 text/spokenText/duration/blocks)、script.summary。
 3. spokenText 严格按 spoken-guide 口语化，禁止数学符号缩写。
 4. 【控件】blocks 必须从 visual-spec 的"预置美工控件库"中选择，禁止发明新类型、禁止用纯 text 堆长段文字。**按学科选控件**（见 visual-spec 的"学科兼容"表：数学用 plot/bar/formula-steps，物理用 formula-card/table，化学用 table/formula-card，计算机用 table/flow，统计用 bar/table）。problem-solving 模式：每个作答场景含解析类控件（formula-steps/plot/bar/keypoint/note/table），倒数第 2 场景必须 answer-sheet 完整作答；concept-explaining 模式：每场景含讲解控件（formula-card/plot/bar/keypoint/note/table），不用 answer-sheet。
-5. 【图形比例】每 3 个场景至少 1 个图形控件（plot/bar/image），理想每 2 个场景 1 个。不要整段只有文字和公式。
-6. 【动画克制】默认 fade/none；zoom 只用于最终答案，slide-up 只用于关键公式。禁止每个块都 zoom/slide-up。
-7. 【时间轴】每个场景必须填 duration（秒）：讲解/作答步骤 5-8 秒，完整作答 6-8 秒，总时长 25-60 秒。
-8. 如果题目自带插图，在讲解到对应内容时用 image 控件引用。
+5. 【图形比例+克制】每 3 个场景至少 1 个图形控件（plot/bar/image），理想每 2 个场景 1 个，但**图形是辅助不是装饰**：同一道题**优先只用一个图形控件**（数学题通常 plot 或 image），**禁止各种图表都用一遍**（不要轮流塞 bar+plot+flow+table 凑数）；每类图表全片最多一次；达到下限后专心讲推导，不要再加新图。
+6. 【动态 plot（数学题加分项）】数学题（极限/导数/函数性质/图像变换）优先用 plot 的动态能力"演"出过程：极限逼近用 traceX（高亮点沿曲线滑向极限点，如 { "from": -6, "to": 0 }）；参数如何影响图像用 animParam（fx 里放参数名并从 from 变到 to，如 fx:"a*sin(x)" 配 animParam:{name:"a",from:1,to:5}）；连续步骤函数形态变化靠跨场景自动 morph。**animParam 与 traceX 互斥，一个 plot 只能二选一**（禁止同用）；animParam.name 是单字母、不能是 x、必须出现在 fx 里；traceX 的 from/to 在 xRange 内且 from<to。动态 plot 用 fade。
+7. 【动画克制】默认 fade/none；zoom 只用于最终答案，slide-up 只用于关键公式。禁止每个块都 zoom/slide-up。
+8. 【时间轴】每个场景必须填 duration（秒）：讲解/作答步骤 5-8 秒，完整作答 6-8 秒，总时长 25-60 秒。
+9. 如果题目自带插图，在讲解到对应内容时用 image 控件引用。
 ${figuresInfo}`,
     `题目信息：\n${JSON.stringify(analysis)}`,
     m, llmConfig
@@ -517,10 +518,10 @@ ${figuresInfo}`,
 1. 结构完整：必须有 script.opening、script.scenes(3-6个场景)、script.summary。
 2. 每场景必须有 text、spokenText、duration、blocks；每个 block 必须有 type 和 pos。
 3. spokenText 是否口语化（无 x^2、lim、∑ 等符号缩写）。
-4. block 数据是否完整可绘制（plot 需 fx/xRange/yRange；bar 需 barData/labels）。
+4. block 数据是否完整可绘制（plot 需 fx/xRange/yRange；**同一 plot 不得同时出现 animParam 与 traceX**；若用 animParam 则 name 不能是 x、必须出现在 fx 中且 from/to 齐全、from 与 to 的波峰波谷应落在 yRange 内；若用 traceX 则 from/to 在 xRange 内且 from<to；bar 需 barData/labels）。
 5. formula 是否标准 LaTeX；pos 是否在 0-100 且不重叠。
 6. 数学推导和结论是否正确。
-7. 【视觉平衡】图形控件（plot/bar/image）是否达到每 3 场景至少 1 个；若不足，把合适的文字场景改成图形场景。
+7. 【视觉平衡+克制】图形控件（plot/bar/image）是否达到每 3 场景至少 1 个；若不足，把合适的文字场景改成图形场景。**同时检查是否图表滥用**：同一道题是否堆了多种图表（bar+plot+flow+table 轮番上）；若是，删掉非必要的图表控件，只保留最能说明问题的那个，达到下限后专心讲推导。
 8. 【时间轴】每场景是否都填了 duration；节奏是否合理（讲解/作答 5-8s、完整作答 6-8s），总时长是否 25-60s。
 9. 【控件规范】blocks 是否只用了 visual-spec 控件库中的类型。
 10. 【主线结构】problem-solving 模式：倒数第 2 场景是否 answer-sheet 完整作答；每个作答场景是否含解析类控件（formula-steps/plot/bar/keypoint/note）。concept-explaining 模式：是否按"引入→分点→小结"组织。
