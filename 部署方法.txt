@@ -93,9 +93,8 @@ npm run dist:mac  # 打包 macOS 安装包
 3. **LaTeX 公式**：讲解脚本里的公式建议用 `\(...\)` 包裹最稳妥；不包裹时系统会自动做"智能分段渲染"，含中文的裸公式（如 `B_{\text{直}} = \frac{\mu_0 I}{2\pi R}`）也能渲染成数学符号。如果看到公式显示为反斜杠源码，检查是不是改坏了 `src/components/blocks/theme.ts` 的 `renderMixedLatex`。
 4. **图表克制**：AI 生成脚本时同一道题只应使用一个主要图形控件（数学题通常 plot 或 image），禁止各种图表（bar + plot + flow + table）轮流塞满。规则写在 `src/tools/visual-spec.txt`，改 prompt 也在那里。
 5. **新增控件**：控件库是注册表驱动，新控件 = 写一个组件 + 在 `src/components/blocks/index.tsx` 的 `registerAllControls()` 里加一行注册，不要改 `MathTemplate.tsx` 的分发逻辑。注意 package.json 的 `sideEffects` 配置可能 tree-shake 掉注册副作用，注册必须包在 `registerAllControls()` 函数里。
-6. **git 推送**：remote 指向 GitHub 仓库 `unlhs1/TutorReel-AllSubjects_fork`。push 前确认梯子（Clash，本地代理 127.0.0.1:7890）开着；github.com HTTPS 直连偶尔能通但慢。commit 消息留空（`git commit --allow-empty-message -m ""`）是项目约定。
-7. **不要提交 API key**：`.env` 已被 gitignore 排除。推送前如怀疑有 key 泄露，用 `git grep -nE "sk-[a-zA-Z0-9]{16,}"` 扫描全仓库。
-8. **代码改动后**：跑 `npx tsc --noEmit` 确认类型无误；有存量错误在 GraphVisualizer/TimelineVisualizer 等旧文件，是历史遗留，不是本次改动的回归。
+6. **不要提交 API key**：`.env` 已被 .gitignore 排除。key 通过环境变量或前端设置面板传入，不要硬编码进代码。推送前如怀疑有 key 泄露，可用 `git grep -nE "sk-[a-zA-Z0-9]{16,}"` 扫描。
+7. **代码改动后**：跑 `npx tsc --noEmit` 确认类型无误；有存量错误在 GraphVisualizer/TimelineVisualizer 等旧文件，是历史遗留，不是本次改动的回归。
 
 ## 10. 关键文件速查
 
