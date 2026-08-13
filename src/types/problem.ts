@@ -169,6 +169,7 @@ export interface MathProblemData extends BaseProblemData {
 // text/formula/plot/bar/image 为兼容旧数据的通用类型，其余为预置美工控件。
 export type BlockType =
   | 'text' | 'formula' | 'plot' | 'bar' | 'image'
+  | 'plot3d'          // 3D 函数曲面/几何体（视频展示，SVG 等距投影 + progress 旋转）
   | 'question-card'   // 题干卡：topic 标签 + 标题 + 完整题干
   | 'title-card'      // 大标题卡：topic 标签 + 大标题 + 副标题
   | 'keypoint'        // 要点卡：编号徽章 + 标题 + 一句话
@@ -194,9 +195,16 @@ export interface Block {
   title?: string;                     // title-card 的大标题 / keypoint 的要点标题
   subtitle?: string;                  // title-card 的副标题
   items?: string[];                   // flow 的步骤名数组 / formula-steps 的 LaTeX 行数组
-  fx?: string | null;                 // plot: 函数表达式
+  fx?: string | null;                 // plot: 函数表达式 / plot3d: 曲面表达式 z=f(x,y)
   xRange?: [number, number];
   yRange?: [number, number];
+  // plot3d: 几何体类型（cube/sphere/cylinder）
+  solid?: 'cube' | 'sphere' | 'cylinder';
+  // plot3d: 切平面位置(0-1)与倾斜弧度
+  cutOffset?: number;
+  cutTilt?: number;
+  // plot3d: 视图范围半径（默认 2.5）
+  range3d?: number;
   highlightX?: number | null;
   points?: Array<[number, number]>;
   // plot 动态增强（"活起来"动画，Remotion interpolate 驱动，无需 Manim）

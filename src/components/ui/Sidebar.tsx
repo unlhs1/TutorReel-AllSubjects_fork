@@ -1,5 +1,5 @@
 import React from 'react';
-import { Workflow, Clock, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Workflow, Clock, PanelLeftClose, PanelLeftOpen, Box } from 'lucide-react';
 import { ContentTypePlugin } from '../../plugins/types';
 
 type SidebarSection = string;
@@ -48,6 +48,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ plugins, activeSection, onSele
 
         {/* Separator */}
         <div className={`h-px bg-gray-200 dark:bg-zinc-800 my-1.5 transition-all ${collapsed ? 'w-6 mx-auto' : 'w-full'}`} />
+
+        <SidebarButton
+          label="数学3D白板"
+          active={activeSection === 'math3d'}
+          onClick={() => onSelect('math3d')}
+          collapsed={collapsed}
+        >
+          <Box size={20} strokeWidth={1.75} />
+        </SidebarButton>
 
         <SidebarButton
           label="批量流水线"

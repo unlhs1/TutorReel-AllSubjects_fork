@@ -43,3 +43,10 @@ Thumbs.db
 
 # OCR è¿è¡Œæ—¶äº§ç‰©ï¼ˆé¢˜ç›®æ’å›¾è£å‰ªï¼‰
 public/question-figures/
+
+# ±¾µØ²âÊÔ²úÎï£¨×Ô¶¯»¯ÑéÖ¤ÓÃ£¬²»Èë¿â£©
+test-out/
+test-out2/
+test-axisdrag.cjs
+test-gizmo-entity.cjs
+shot-axis.mjs

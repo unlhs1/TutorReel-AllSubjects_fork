@@ -119,12 +119,15 @@ export const MathTemplate: React.FC<Props> = ({ data, isDark = false }) => {
       // 防止 y + height 超出画布底部
       effectiveH = Math.min(effectiveH, Math.max(10, 100 - (block.pos.y || 0)));
     }
+    // 块边界钳制：防止 AI 给的 pos 越界（x+w>100 或 y+h>100 导致溢出/裁切）
+    const cw = Math.max(5, Math.min(100 - (block.pos.x || 0), block.pos.w || 50));
+    const ch = Math.max(5, Math.min(100 - (block.pos.y || 0), effectiveH));
     const baseStyle: React.CSSProperties = {
       position: 'absolute',
-      left: `${block.pos.x}%`,
-      top: `${block.pos.y}%`,
-      width: `${block.pos.w}%`,
-      height: `${effectiveH}%`,
+      left: `${Math.max(0, Math.min(100, block.pos.x || 0))}%`,
+      top: `${Math.max(0, Math.min(100, block.pos.y || 0))}%`,
+      width: `${cw}%`,
+      height: `${ch}%`,
       opacity: anim.opacity,
       transform: anim.transform,
       boxSizing: 'border-box',

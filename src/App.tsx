@@ -5,6 +5,7 @@ import { Sidebar } from './components/ui/Sidebar';
 import { SettingsModal } from './components/ui/SettingsModal';
 import { Toast, useToast } from './components/ui/Toast';
 import { BatchEditor } from './components/editor/BatchEditor';
+import { Math3DStudio } from './components/math3d/Math3DStudio';
 import { GenericExplainerVideo } from './Composition';
 import { useVideoStore } from './stores/videoStore';
 import { useWorkflowStore } from './stores/workflowStore';
@@ -30,7 +31,7 @@ export const App: React.FC = () => {
 
   const handleSectionChange = (section: string) => {
     setActiveSection(section);
-    if (section !== 'history' && section !== 'batch') {
+    if (section !== 'history' && section !== 'batch' && section !== 'math3d') {
       setActivePluginId(section);
     }
   };
@@ -146,7 +147,9 @@ export const App: React.FC = () => {
       <Toast message={toastMessage} onClose={() => setToastMessage(null)} />
 
       <div className={`${sidebarCollapsed ? 'pl-14' : 'pl-44'} pt-16 min-h-screen transition-[padding] duration-300 ease-in-out`}>
-        {activeSection === 'batch' ? (
+        {activeSection === 'math3d' ? (
+          <Math3DStudio />
+        ) : activeSection === 'batch' ? (
           <div className="p-6"><BatchEditor /></div>
         ) : activeSection === 'history' ? (
           <div className="p-6">

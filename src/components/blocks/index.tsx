@@ -25,6 +25,7 @@ import { CircuitDiagram } from './CircuitDiagram';
 import { renderLatex } from './theme';
 import { MathPlotVisualizer } from '../visualizers/MathPlotVisualizer';
 import { BarVisualizer } from '../visualizers/BarVisualizer';
+import { Math3DVisualizer } from '../visualizers/Math3DVisualizer';
 
 // 字号计算（基于块高度百分比换算 1080p 视频像素）
 const FORMULA_BASE = 44;
@@ -140,6 +141,14 @@ registerControl({
   render: ({ block, theme, progress, isDark, prevPlot }) => (
     <div style={{ padding: 6 }}>
       <MathPlotVisualizer currState={block} prevState={prevPlot} progress={progress} isDark={isDark} />
+    </div>
+  ),
+});
+registerControl({
+  type: 'plot3d',
+  render: ({ block, progress, isDark }) => (
+    <div style={{ padding: 6, width: '100%', height: '100%', boxSizing: 'border-box' }}>
+      <Math3DVisualizer block={block} progress={progress} isDark={isDark} />
     </div>
   ),
 });

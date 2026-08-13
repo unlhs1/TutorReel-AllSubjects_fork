@@ -7,10 +7,13 @@
   "private": true,
   "main": "dist-electron/main.js",
   "dependencies": {
+    "@react-three/drei": "^10.7.8",
+    "@react-three/fiber": "^9.7.0",
     "@remotion/cli": "4.0.454",
     "@remotion/player": "^4.0.454",
     "@remotion/tailwind-v4": "4.0.454",
     "@rolldown/binding-win32-x64-msvc": "^1.0.0-rc.17",
+    "@types/three": "^0.185.4",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
@@ -25,7 +28,8 @@
     "react-dom": "19.2.3",
     "react-resizable-panels": "^4.10.0",
     "remotion": "4.0.454",
-    "tailwindcss": "4.0.0"
+    "tailwindcss": "4.0.0",
+    "three": "^0.185.1"
   },
   "devDependencies": {
     "@remotion/eslint-config-flat": "4.0.454",

@@ -263,6 +263,62 @@ app.post('/api/ocr', async (req, res) => {
   }
 });
 
+// 手写数学公式识别：前端手写板导出 PNG → 视觉大模型识别为 LaTeX + mathjs 可求值表达式
+const OCR_MATH_PROMPT = `你是一个数学公式识别助手。识别图片中的手写数学公式，只输出一个 JSON 对象，不要多余文字：
+{
+  "latex": "公式的 LaTeX 形式，如 y = \\frac{x^2}{2} 或 z = x^2 + y^2",
+  "expr": "用 mathjs 语法表示的同一条公式的可求值表达式（去掉 y= / z= 前缀，只保留右侧，变量用 x/y/z），如 (x^2)/2 或 x^2 + y^2",
+  "kind": "curve 或 surface"
+}
+要求：
+1. latex：完整 LaTeX，等号可保留。
+2. expr（关键）：必须是 mathjs 可直接 evaluate 的表达式——幂用 ^、分式用括号 /、函数用 sin(x)/cos(x)/sqrt(x)/log(x)/abs(x) 等、乘法用 *、只保留等式右侧的纯函数体。若公式含多个变量（如 x 和 y）则 kind=surface，expr 同时含 x 和 y。
+3. kind：只有一个自变量（通常是 x）→ curve；含两个变量（x,y 或 y,z）→ surface。
+4. 如果是普通数字/简单运算，也按 curve 处理。
+5. 无法识别时输出 {"latex":"","expr":"","kind":"curve"}。`;
+
+app.post('/api/ocr-math', async (req, res) => {
+  try {
+    const { imageBase64, ocrKey, ocrBaseURL, ocrModel } = req.body;
+    if (!imageBase64) {
+      return res.status(400).json({ error: 'Missing image' });
+    }
+    if (imageBase64.length > 10 * 1024 * 1024) {
+      return res.status(400).json({ error: '图片过大，请压缩后重试' });
+    }
+    const resolvedModel = ocrModel || process.env.OCR_MODEL || 'qwen-vl-max';
+    console.log(`[ocr-math] model=${resolvedModel} apiKey=${ocrKey ? 'YES' : 'NO'} envKey=${process.env.DASHSCOPE_API_KEY ? 'YES' : 'NO'}`);
+    const client = new OpenAI({
+      apiKey: ocrKey || process.env.DASHSCOPE_API_KEY || '',
+      baseURL: ocrBaseURL || process.env.OCR_BASE_URL || 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    });
+    const response = await client.chat.completions.create({
+      model: resolvedModel,
+      messages: [
+        { role: 'system', content: OCR_MATH_PROMPT },
+        {
+          role: 'user',
+          content: [
+            { type: 'image_url', image_url: { url: `data:image/png;base64,${imageBase64}` } },
+            { type: 'text', text: '识别这个手写数学公式，输出 JSON。' },
+          ],
+        },
+      ],
+      max_tokens: 800,
+    });
+    const content = response.choices[0]?.message?.content || '';
+    const parsed = parseLLMJson(content);
+    const latex = typeof parsed.latex === 'string' ? parsed.latex : '';
+    const expr = typeof parsed.expr === 'string' ? parsed.expr : '';
+    const kind = parsed.kind === 'surface' ? 'surface' : 'curve';
+    console.log(`[ocr-math] latex=${latex.slice(0, 60)} expr=${expr.slice(0, 60)} kind=${kind}`);
+    res.json({ latex, expr, kind });
+  } catch (error) {
+    console.error('OCR math error:', error);
+    res.status(500).json({ error: error instanceof Error ? error.message : '手写公式识别失败' });
+  }
+});
+
 app.post('/api/ocr-test', async (req, res) => {
   try {
     const { ocrKey, ocrBaseURL } = req.body;
