@@ -8,6 +8,7 @@ export interface ExportTask {
   status: ExportStatus;
   progress: number;
   outputUrl?: string;
+  outputPath?: string; // MP4 绝对路径（渲染完成后，供前端展示/打开文件夹）
   error?: string;
 }
 
@@ -60,14 +61,15 @@ class ExportQueue {
     const outputFilename = `export_${taskId}`;
 
     try {
-      await exportVideo(videoData, outputFilename, (progress) => {
+      const outputFile = await exportVideo(videoData, outputFilename, (progress) => {
         this.updateTask(taskId, { progress });
       }, showWatermark);
 
       this.updateTask(taskId, {
         status: 'done',
         progress: 1,
-        outputUrl: `/api/export/download/${outputFilename}.mp4`
+        outputUrl: `/api/export/download/${outputFilename}.mp4`,
+        outputPath: outputFile,
       });
     } catch (error) {
       this.updateTask(taskId, {

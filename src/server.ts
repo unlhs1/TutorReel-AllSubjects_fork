@@ -588,6 +588,32 @@ app.get('/api/export/status/:id', (req, res) => {
   res.json(task);
 });
 
+// 打开导出视频所在文件夹（Windows explorer /select 定位文件）——懒人化：导出后用户直接看到文件
+app.post('/api/export/open', (req, res) => {
+  try {
+    const { filePath } = req.body;
+    if (!filePath || typeof filePath !== 'string') {
+      return res.status(400).json({ error: 'Missing filePath' });
+    }
+    const outDir = path.resolve(DATA_DIR, 'out');
+    const resolved = path.resolve(filePath);
+    // 安全校验：路径必须在 out 目录内
+    if (!resolved.startsWith(outDir + path.sep) && resolved !== outDir) {
+      return res.status(400).json({ error: '非法路径' });
+    }
+    if (!fs.existsSync(resolved)) {
+      return res.status(404).json({ error: '文件不存在' });
+    }
+    // Windows 用资源管理器打开并选中文件（不经过浏览器，不会触发 Edge 拦截）
+    exec(`explorer /select,"${resolved}"`, { timeout: 8000 }, (err) => {
+      if (err) console.warn('explorer 打开文件夹失败:', err);
+    });
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : '打开文件夹失败' });
+  }
+});
+
 app.get('/api/export/download/:filename', (req, res) => {
   const filename = path.basename(req.params.filename); // strip any directory components
   const outDir = path.resolve(DATA_DIR, 'out');

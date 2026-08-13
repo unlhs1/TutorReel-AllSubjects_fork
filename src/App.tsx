@@ -105,8 +105,19 @@ export const App: React.FC = () => {
           if (task.status === 'done') {
             clearInterval(poll);
             setIsExporting(false);
-            showToast('导出完成', '视频已渲染完毕，即将下载。', 'success');
-            window.open(`${task.outputUrl}`, '_blank');
+            // 懒人化：自动用资源管理器打开所在文件夹并定位文件（不经浏览器下载，避免 Edge 拦截弹窗）
+            if (task.outputPath) {
+              showToast('导出完成', '视频已生成，正在文件夹中定位…', 'success');
+              fetch('/api/export/open', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filePath: task.outputPath }),
+              }).catch(() => {
+                showToast('导出完成', `视频已保存：${task.outputPath}`, 'success');
+              });
+            } else {
+              showToast('导出完成', '视频已渲染完毕', 'success');
+            }
           } else if (task.status === 'failed') {
             clearInterval(poll);
             setIsExporting(false);
