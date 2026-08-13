@@ -80,7 +80,7 @@ function curvesNear(fx1: string, fx2: string, xRange: [number, number], eps = 1e
       if ((y1 === null) !== (y2 === null)) return false;
       continue;
     }
-    if (Math.abs(y1 - y2) > eps) return false;
+    if (Math.abs(y1 - y2) > eps * Math.max(1, Math.abs(y1), Math.abs(y2))) return false;
   }
   return true;
 }
@@ -112,7 +112,8 @@ export const MathPlotVisualizer: React.FC<Props> = ({ currState, prevState, prog
   const HL_COLOR = POINT_COLOR; // 静态 highlightX 用品红，与黄色轨迹点区分
 
   const hasCurve = !!currState?.fx && currState.fx.trim() !== '';
-  const showPlaceholder = !currState || (!hasCurve && !currState.annotations?.length);
+  // 纯 points 块（无 fx/annotations）不算占位，也要渲染特殊点
+  const showPlaceholder = !currState || (!hasCurve && !currState.annotations?.length && !currState.points?.length);
 
   const xRange: [number, number] = currState?.xRange ?? DEFAULT_X_RANGE;
   const scale = useMemo(() => (currState ? makeScale(currState) : null), [currState]);
@@ -188,7 +189,8 @@ export const MathPlotVisualizer: React.FC<Props> = ({ currState, prevState, prog
   // ── 高亮点 / 轨迹点：traceX 让点沿曲线滑动（极限逼近/切线演示）；否则用静态 highlightX ──
   const traceT = interpolate(progress, [0.12, 0.9], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
   const hx: number | null = trace
-    ? trace.from + (trace.to - trace.from) * traceT
+    // 钳制到 xRange 内，避免轨迹点/高亮圆画出画布
+    ? Math.min(scale?.x1 ?? trace.to, Math.max(scale?.x0 ?? trace.from, trace.from + (trace.to - trace.from) * traceT))
     : (currState?.highlightX !== undefined && currState?.highlightX !== null && isFinite(currState.highlightX)
       ? currState.highlightX
       : null);

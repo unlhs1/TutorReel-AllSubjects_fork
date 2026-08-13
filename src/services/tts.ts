@@ -111,32 +111,41 @@ export function estimateSubtitles(text: string, durationInSeconds: number): Subt
   });
 }
 
-export async function generateTTS(text: string, _filename?: string, voice: string = 'zh-CN-XiaoxiaoNeural', apiKey?: string): Promise<{ audioUrl: string; durationInSeconds: number; subtitles: SubtitleSegment[] }> {
+export async function generateTTS(text: string, _filename?: string, voice: string = 'zh-CN-XiaoxiaoNeural', apiKey?: string, dashVoice?: string): Promise<{ audioUrl: string; durationInSeconds: number; subtitles: SubtitleSegment[] }> {
   if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true });
   }
 
-  // voice 参与缓存 key，避免不同音色互相覆盖
-  const hash = crypto.createHash('md5').update(`${text}|${voice}`).digest('hex');
+  // 缓存 key 含 edge 音色 + DashScope 回退音色，避免不同音色/回退源互相覆盖
+  const cleanText = sanitizeForTTS(text);
+  const dashScopeKey = apiKey || process.env.DASHSCOPE_API_KEY;
+  // 回退音色：设置面板显式指定的 dashVoice 优先，否则按 edge-tts 音色自动映射
+  const dashScopeVoice = dashVoice || DASHSCOPE_VOICE_MAP[voice] || 'longxiaochun';
+  const hash = crypto.createHash('md5').update(`${text}|${voice}|${dashScopeVoice}`).digest('hex');
   const filename = hash;
   const outputPath = path.join(outputDir, `${filename}.mp3`);
 
   try {
     if (fs.existsSync(outputPath)) {
-      console.log(`Audio for hash ${hash} already exists, skipping TTS generation.`);
-      const durationInSeconds = await getAudioDurationInSeconds(outputPath);
-      return {
-        audioUrl: `/voiceover/${filename}.mp3`,
-        durationInSeconds,
-        subtitles: estimateSubtitles(text, durationInSeconds),
-      };
+      // 校验缓存音频完整性：损坏则删掉重新合成
+      try {
+        const durationInSeconds = await getAudioDurationInSeconds(outputPath);
+        if (durationInSeconds > 0) {
+          console.log(`Audio for hash ${hash} already exists, skipping TTS generation.`);
+          return {
+            audioUrl: `/voiceover/${filename}.mp3`,
+            durationInSeconds,
+            subtitles: estimateSubtitles(text, durationInSeconds),
+          };
+        }
+        throw new Error('zero duration');
+      } catch {
+        console.warn(`缓存音频损坏，重新合成: ${hash}`);
+        try { if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath); } catch { /* ignore */ }
+      }
     }
 
-    const cleanText = sanitizeForTTS(text);
-
     // TTS 策略：默认免费 edge-tts；失败自动回退 DashScope（国内稳定，若有 key）；都失败则报错提示
-    const dashScopeKey = apiKey || process.env.DASHSCOPE_API_KEY;
-    const dashScopeVoice = DASHSCOPE_VOICE_MAP[voice] || 'longxiaochun';
     let synthOk = false;
     try {
       await edgeTTSWithRetry(cleanText, outputPath, voice);

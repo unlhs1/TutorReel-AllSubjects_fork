@@ -127,10 +127,14 @@
 4. 用法：**用动态动画展示数学过程本身**（极限逼近、参数影响、曲线变换），不要为炫技滥用。
 
 ### 11. bar —— 柱状图（概率分布/数据对比）
-字段：`barData`（柱高数组）、`labels`（柱标签数组）、`highlightIndex`（高亮柱下标，可省）、`annotations`（标注文字，可省）
+字段：`barData`（柱高数组）、`labels`（柱标签数组）、`highlightIndex`（高亮柱下标，可省）、`annotations`（标注文字，可省）、`dist`（概率分布声明，可省）
+**⚠️ 概率分布图必须用真实概率值**：泊松/二项等分布 PMF 的 `barData` 填**真实概率**（0~1 内的实际值，如 λ=50 泊松在 k=50 处约 0.056）。**禁止把峰值归一化成 1.0**——纵轴会按真实值显示刻度。数据对比图（频数/分数等）才可用任意数值。
+
+**🔢 精确计算（推荐，无需自己算概率）**：概率分布图用 `dist` 字段，系统用**内置数学引擎**按 `labels` 的 k 值精确计算真实概率并自动覆盖 `barData`：
 ```json
-{ "type": "bar", "barData": [3, 5, 7, 8, 6, 4], "labels": ["40", "45", "50", "55", "60", "65"], "highlightIndex": 2, "annotations": ["λ=50 处概率最大"], "pos": { "x": 40, "y": 15, "w": 55, "h": 65 }, "animation": "slide-up" }
+{ "type": "bar", "dist": { "type": "poisson", "lambda": 50 }, "labels": ["40", "45", "50", "55", "60", "65", "70"], "barData": [0, 0, 0, 0, 0, 0, 0], "highlightIndex": 2, "annotations": ["λ=50 处概率最大"], "pos": { "x": 40, "y": 15, "w": 55, "h": 65 }, "animation": "slide-up" }
 ```
+`dist.type`：`poisson`（配 `lambda`）、`binomial`（配 `n`,`p`）、`normal`（配 `mu`,`sigma`）。`labels` 填要展示的横轴值（字符串数组，如 "40"~"70"），`barData` 填任意占位（会被覆盖）。
 
 ### 12. image —— 题目自带插图
 字段：`imageRef`（题目插图 id，如 "fig1"）

@@ -1,0 +1,27 @@
+{
+  "data": {
+    "id": "bar-test-001",
+    "type": "general",
+    "title": "柱状图生长测试",
+    "topic": "统计",
+    "mode": "problem-solving",
+    "question": "测试",
+    "durationInFrames": 420,
+    "script": {
+      "opening": "测试柱状图生长",
+      "scenes": [
+        {
+          "text": "柱状图",
+          "spokenText": "柱状图",
+          "duration": 6,
+          "blocks": [
+            { "type": "bar", "barData": [0.0215, 0.0458, 0.0563, 0.0422, 0.0201, 0.0063, 0.0014], "labels": ["40", "45", "50", "55", "60", "65", "70"], "highlightIndex": 2, "annotations": ["λ=50 处概率最大（计算引擎精确值）"], "pos": { "x": 10, "y": 12, "w": 80, "h": 70 }, "animation": "fade" },
+            { "type": "caption", "content": "柱状图生长动画", "pos": { "x": 20, "y": 84, "w": 60, "h": 10 }, "animation": "fade" }
+          ]
+        }
+      ],
+      "summary": "测试完成"
+    }
+  },
+  "isDark": true
+}

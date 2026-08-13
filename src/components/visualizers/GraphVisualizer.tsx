@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { spring, useCurrentFrame, useVideoConfig } from 'remotion';
-import { GraphData, GraphNode, GraphEdge } from '../../types/problem';
+import { GraphData } from '../../types/problem';
 
 interface GraphVisualizerProps {
   graphData: GraphData;
@@ -106,9 +106,6 @@ export const GraphVisualizer: React.FC<GraphVisualizerProps> = ({ graphData, act
           const length = Math.sqrt(dx * dx + dy * dy);
           const shortenRatio = length > 0 ? (length - 8) / length : 1;
           
-          const endX = fromPos.x + dx * shortenRatio;
-          const endY = fromPos.y + dy * shortenRatio;
-
           return (
             <g key={`${edge.from}-${edge.to}-${idx}`} opacity={edgeProgress}>
               <line
@@ -156,7 +153,7 @@ export const GraphVisualizer: React.FC<GraphVisualizerProps> = ({ graphData, act
         const scale = spring({
           frame: Math.max(0, frame - idx * 5),
           fps,
-          config: { tension: 120, friction: 14 },
+          config: { stiffness: 120, damping: 14 },
         });
 
         // 节点高亮大小变换

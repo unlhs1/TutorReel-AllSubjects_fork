@@ -39,13 +39,6 @@ export const TimelineVisualizer: React.FC<Props> = ({ timelineData, activeStepIn
               config: { damping: 14, stiffness: 100 }
             });
             
-            // Pop animation for active state
-            const popScale = spring({
-              frame: isActive ? frame - (index * 5) : 0, // start pop when active
-              fps,
-              config: { damping: 10, mass: 0.8 }
-            });
-
             return (
               <div 
                 key={index}

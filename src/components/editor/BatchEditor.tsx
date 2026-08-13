@@ -1,25 +1,34 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Toast, useToast } from '../ui/Toast';
-import { ProblemType } from '../../types/problem';
-import { getApiConfigForRequest } from '../../services/apiConfig';
+import { getApiConfigForRequest, getOcrConfigForRequest, getTtsConfigForRequest } from '../../services/apiConfig';
+import { ocrImage, OcrFigure } from '../../services/ocr';
+import { TTS_VOICES } from '../../services/ttsVoices';
 
-interface ParsedItem {
+// 批量任务里的一道学科题（与 server batchQueue.BatchItemInput 对应）
+interface BatchItemInput {
   title: string;
   question: string;
-  type: ProblemType;
+  topic?: string;
+  figures?: OcrFigure[];
+  figureSummary?: string;
+  preview?: string; // 仅前端展示用，提交时剔除
 }
 
 export const BatchEditor: React.FC = () => {
-  const [inputType, setInputType] = useState<'text' | 'url'>('text');
-  const [inputValue, setInputValue] = useState('');
-  const [aiModel, setAiModel] = useState('deepseek-v4-flash');
+  const [inputType, setInputType] = useState<'text' | 'images'>('text');
+  const [textInput, setTextInput] = useState('');
+  const [imageFiles, setImageFiles] = useState<File[]>([]);
+  const [imagePreviews, setImagePreviews] = useState<string[]>([]);
+  const [voice, setVoice] = useState('zh-CN-XiaoxiaoNeural');
   const [isSplitting, setIsSplitting] = useState(false);
-  const [parsedItems, setParsedItems] = useState<ParsedItem[]>([]);
+  const [ocrProgress, setOcrProgress] = useState<{ done: number; total: number } | null>(null);
+  const [parsedItems, setParsedItems] = useState<BatchItemInput[]>([]);
   const [jobId, setJobId] = useState<string | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [jobStatus, setJobStatus] = useState<any>(null);
   const [isMerging, setIsMerging] = useState(false);
   const [mergedVideoUrl, setMergedVideoUrl] = useState<string | null>(null);
+  const startingRef = useRef(false); // 防重复创建批量任务
   const { toastMessage, showToast, setToastMessage } = useToast();
 
   useEffect(() => {
@@ -43,32 +52,24 @@ export const BatchEditor: React.FC = () => {
     return () => clearInterval(interval);
   }, [jobId]);
 
-  const handleSplit = async () => {
-    if (!inputValue.trim()) return;
+  // 文本模式：LLM 拆分多道学科题
+  const handleSplitText = async () => {
+    if (!textInput.trim()) return;
     setIsSplitting(true);
     setParsedItems([]);
     setJobId(null);
     setJobStatus(null);
     setMergedVideoUrl(null);
-
     try {
-      const endpoint = inputType === 'text' ? '/api/batch/split-text' : '/api/batch/scrape';
-      const apiCfg = getApiConfigForRequest();
-      const payload = inputType === 'text'
-        ? { rawText: inputValue, model: aiModel, ...apiCfg }
-        : { url: inputValue, model: aiModel };
-
-      const res = await fetch(`${endpoint}`, {
+      const res = await fetch('/api/batch/split-text', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({ rawText: textInput, ...getApiConfigForRequest() }),
       });
-
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.error || 'Failed to split');
       }
-
       const data = await res.json();
       setParsedItems(data.problems || []);
     } catch (error) {
@@ -78,28 +79,81 @@ export const BatchEditor: React.FC = () => {
     }
   };
 
+  // 图片模式：逐张 OCR 生成题目列表
+  const handleOcrImages = async () => {
+    if (imageFiles.length === 0) return;
+    setIsSplitting(true);
+    setOcrProgress({ done: 0, total: imageFiles.length });
+    setParsedItems([]);
+    setJobId(null);
+    setJobStatus(null);
+    setMergedVideoUrl(null);
+
+    const items: BatchItemInput[] = [];
+    for (let i = 0; i < imageFiles.length; i++) {
+      try {
+        const { text, figures, figureSummary } = await ocrImage(imageFiles[i]);
+        items.push({
+          title: (text.trim() || `题目 ${i + 1}`).slice(0, 18),
+          question: text,
+          topic: '',
+          figures,
+          figureSummary,
+          preview: imagePreviews[i],
+        });
+      } catch (error) {
+        console.warn(`OCR 第 ${i + 1} 张失败:`, error);
+        items.push({ title: `题目 ${i + 1}`, question: '', topic: '', preview: imagePreviews[i] });
+      }
+      setOcrProgress({ done: i + 1, total: imageFiles.length });
+    }
+    setParsedItems(items);
+    setIsSplitting(false);
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []).slice(0, 12);
+    setImageFiles(files);
+    setImagePreviews([]);
+    files.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setImagePreviews(prev => [...prev, reader.result as string]);
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
   const handleRemoveItem = (idx: number) => {
     setParsedItems(prev => prev.filter((_, i) => i !== idx));
   };
 
   const handleStartBatch = async () => {
-    if (parsedItems.length === 0) return;
+    if (parsedItems.length === 0 || startingRef.current) return;
+    startingRef.current = true;
     try {
+      const cleanItems = parsedItems.map(({ preview, ...rest }) => rest);
       const res = await fetch('/api/batch/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: parsedItems })
+        body: JSON.stringify({
+          items: cleanItems,
+          voice,
+          ...getApiConfigForRequest(),
+          ...getOcrConfigForRequest(),
+          ...getTtsConfigForRequest(),
+        }),
       });
-
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.error || 'Failed to start batch');
       }
-
       const data = await res.json();
       setJobId(data.jobId);
     } catch (error) {
       showToast('启动失败', error instanceof Error ? error.message : '无法启动批量任务', 'error');
+    } finally {
+      startingRef.current = false;
     }
   };
 
@@ -155,17 +209,16 @@ export const BatchEditor: React.FC = () => {
       <div className="px-8 py-6 border-b border-gray-100 dark:border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-lg font-semibold text-gray-900 dark:text-zinc-100">批量生产流水线</h2>
-          <p className="text-sm text-gray-400 dark:text-zinc-500 mt-0.5">支持长文本智能拆分与八股文网站抓取</p>
+          <p className="text-sm text-gray-400 dark:text-zinc-500 mt-0.5">长文本拆分 / 多张题目图片批量生成讲解视频</p>
         </div>
         <div className="relative">
           <select
-            value={aiModel}
-            onChange={(e) => setAiModel(e.target.value)}
+            value={voice}
+            onChange={(e) => setVoice(e.target.value)}
+            title="讲解音色"
             className="appearance-none pl-3 pr-8 py-2 bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-lg text-xs font-medium text-gray-700 dark:text-zinc-300 focus:ring-2 focus:ring-cyan-500/20 outline-none cursor-pointer"
           >
-            <option value="deepseek-v4-flash">DeepSeek V4 Flash</option>
-            <option value="deepseek-v4-pro">DeepSeek V4 Pro</option>
-            <option value="gpt-4o-mini">GPT-4o Mini</option>
+            {TTS_VOICES.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
           </select>
           <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
             <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -183,11 +236,11 @@ export const BatchEditor: React.FC = () => {
               <div className="flex gap-2 mb-4">
                 {[
                   { id: 'text', label: '长文本拆分' },
-                  { id: 'url', label: '八股文 URL 抓取' },
+                  { id: 'images', label: '题目图片（批量 OCR）' },
                 ].map(({ id, label }) => (
                   <button
                     key={id}
-                    onClick={() => setInputType(id as 'text' | 'url')}
+                    onClick={() => setInputType(id as 'text' | 'images')}
                     className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                       inputType === id
                         ? 'bg-cyan-600 text-white'
@@ -201,26 +254,39 @@ export const BatchEditor: React.FC = () => {
 
               {inputType === 'text' ? (
                 <textarea
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
+                  value={textInput}
+                  onChange={(e) => setTextInput(e.target.value)}
                   rows={7}
-                  placeholder="在此粘贴包含多道八股文面试题的长文本、面经总结等..."
+                  placeholder="在此粘贴多道学科题目的长文本（数学/物理/化学/计算机/统计等），系统会自动拆分成多道题..."
                   className={`${inputCls} resize-none`}
                 />
               ) : (
-                <input
-                  type="url"
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
-                  placeholder="输入面经网页 URL，例如：https://javaguide.cn/..."
-                  className={inputCls}
-                />
+                <div className="space-y-3">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={handleFileSelect}
+                    className="w-full text-sm text-gray-500 dark:text-zinc-400 file:mr-4 file:px-4 file:py-2.5 file:rounded-xl file:border-0 file:bg-cyan-600 file:text-white file:text-sm file:font-semibold hover:file:bg-cyan-700 cursor-pointer"
+                  />
+                  <p className="text-xs text-gray-400 dark:text-zinc-500">支持一次选多张题目图片（最多 12 张），每张会自动 OCR 识别文字、公式与插图。若某张识别为空，可在列表中删除。</p>
+                  {imagePreviews.length > 0 && (
+                    <div className="flex flex-wrap gap-3">
+                      {imagePreviews.map((src, i) => (
+                        <div key={i} className="relative w-28 h-28 rounded-xl overflow-hidden border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-800">
+                          <img src={src} alt={`题目图 ${i + 1}`} className="w-full h-full object-contain" />
+                          <span className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/60 text-white text-[10px] font-semibold">{i + 1}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )}
 
               <div className="mt-4 flex justify-end">
                 <button
-                  onClick={handleSplit}
-                  disabled={isSplitting || !inputValue.trim()}
+                  onClick={inputType === 'text' ? handleSplitText : handleOcrImages}
+                  disabled={isSplitting || (inputType === 'text' ? !textInput.trim() : imageFiles.length === 0)}
                   className="flex items-center gap-2 px-5 py-2.5 bg-cyan-600 hover:bg-cyan-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-xl transition-colors"
                 >
                   {isSplitting && (
@@ -229,7 +295,11 @@ export const BatchEditor: React.FC = () => {
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                     </svg>
                   )}
-                  {isSplitting ? '智能拆分中…' : '提取题目列表'}
+                  {isSplitting
+                    ? (inputType === 'images' && ocrProgress
+                      ? `OCR 识别中 ${ocrProgress.done}/${ocrProgress.total}…`
+                      : '智能拆分中…')
+                    : '提取题目列表'}
                 </button>
               </div>
             </div>
@@ -250,31 +320,33 @@ export const BatchEditor: React.FC = () => {
                 </div>
 
                 <div className="divide-y divide-gray-100 dark:divide-zinc-800 max-h-[400px] overflow-y-auto">
-                  {parsedItems.map((item, idx) => {
-                    return (
-                      <div
-                        key={idx}
-                        className={`p-4 flex items-center gap-3 transition-colors hover:bg-gray-50 dark:hover:bg-zinc-800/50`}
-                      >
-                        <span className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-400`}>
-                          {idx + 1}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <h4 className="text-sm font-semibold text-gray-900 dark:text-zinc-100 mb-0.5 truncate">{item.title}</h4>
-                          <p className="text-xs text-gray-500 dark:text-zinc-400 line-clamp-2">{item.question}</p>
+                  {parsedItems.map((item, idx) => (
+                    <div key={idx} className="p-4 flex items-center gap-3 transition-colors hover:bg-gray-50 dark:hover:bg-zinc-800/50">
+                      <span className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-400`}>
+                        {idx + 1}
+                      </span>
+                      {item.preview && (
+                        <img src={item.preview} alt="" className="shrink-0 w-14 h-14 rounded-lg object-contain border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-800" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-sm font-semibold text-gray-900 dark:text-zinc-100 truncate">{item.title || '未命名题目'}</h4>
+                          {item.topic && <span className="shrink-0 px-1.5 py-0.5 rounded bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 text-[10px] font-medium">{item.topic}</span>}
+                          {item.figures && item.figures.length > 0 && <span className="shrink-0 text-[10px] text-gray-400 dark:text-zinc-500">含 {item.figures.length} 张插图</span>}
                         </div>
-                        <button
-                          onClick={() => handleRemoveItem(idx)}
-                          className="shrink-0 w-6 h-6 rounded-md flex items-center justify-center text-gray-300 dark:text-zinc-600 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
-                          title="删除此题"
-                        >
-                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                          </svg>
-                        </button>
+                        <p className="text-xs text-gray-500 dark:text-zinc-400 line-clamp-2">{item.question}</p>
                       </div>
-                    );
-                  })}
+                      <button
+                        onClick={() => handleRemoveItem(idx)}
+                        className="shrink-0 w-6 h-6 rounded-md flex items-center justify-center text-gray-300 dark:text-zinc-600 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+                        title="删除此题"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
@@ -284,7 +356,7 @@ export const BatchEditor: React.FC = () => {
             <div className="px-5 py-4 border-b border-gray-100 dark:border-zinc-800 flex items-center justify-between bg-gray-50 dark:bg-zinc-800/50">
               <div>
                 <h3 className="text-sm font-semibold text-gray-900 dark:text-zinc-100">任务队列执行中</h3>
-                <p className="text-xs text-gray-400 dark:text-zinc-500 mt-0.5">系统将自动依序完成：AI解析 → 语音合成 → 视频渲染</p>
+                <p className="text-xs text-gray-400 dark:text-zinc-500 mt-0.5">系统将自动依序完成：AI 生成脚本 → 配音 → 视频渲染</p>
               </div>
               {jobStatus?.status === 'done' && (
                 <div className="flex gap-2">
@@ -328,7 +400,7 @@ export const BatchEditor: React.FC = () => {
 
             <div className="divide-y divide-gray-100 dark:divide-zinc-800 max-h-[600px] overflow-y-auto">
               {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-              {jobStatus?.items.map((item: any, idx: number) => (
+              {Array.isArray(jobStatus?.items) && jobStatus.items.map((item: any, idx: number) => (
                 <div key={item.id} className="p-4">
                   <div className="flex items-start justify-between gap-3 mb-3">
                     <div className="flex gap-3">

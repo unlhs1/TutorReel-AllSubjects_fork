@@ -202,9 +202,10 @@ export interface Block {
   // plot 动态增强（"活起来"动画，Remotion interpolate 驱动，无需 Manim）
   animParam?: { name: string; from: number; to: number };  // 参数动画：fx 里的参数 name 随场景进度从 from 平滑变到 to，曲线形态实时演变
   traceX?: { from: number; to: number };                   // 轨迹点：高亮点沿曲线从 x=from 滑到 x=to（极限逼近/切线滑动演示）
-  barData?: number[];                 // bar: 柱高
-  labels?: string[];                  // bar: 柱标签
+  barData?: number[];                 // bar: 柱高（概率分布图由 server 按 dist 精确计算覆盖）
+  labels?: string[];                  // bar: 柱标签（概率分布图填 k 值，server 据此算 PMF）
   highlightIndex?: number;
+  dist?: { type: 'poisson' | 'binomial' | 'normal'; lambda?: number; n?: number; p?: number; mu?: number; sigma?: number }; // bar: 概率分布声明，server 用数学引擎按 labels 精确算 barData
   headers?: string[];                 // table: 表头数组
   rows?: string[][];                  // table: 行数组（每行与表头列数一致）
   highlightRow?: number;              // table: 高亮行下标（0 起），可省

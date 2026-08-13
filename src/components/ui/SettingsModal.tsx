@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { ApiConfig, PRESETS, OCR_DEFAULTS, getApiConfig, saveApiConfig } from '../../services/apiConfig';
+import { ApiConfig, PRESETS, OCR_DEFAULTS, TTS_DEFAULTS, getApiConfig, saveApiConfig } from '../../services/apiConfig';
+import { DASHSCOPE_VOICES } from '../../services/ttsVoices';
 
 interface SettingsModalProps {
   open: boolean;
@@ -23,6 +24,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) =
   const [ocrModel, setOcrModel] = useState(OCR_DEFAULTS.DEFAULT_OCR_MODEL);
   const [ocrTestStatus, setOcrTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [ocrTestMessage, setOcrTestMessage] = useState('');
+  // TTS / 语音合成配置（DashScope 回退）
+  const [ttsKey, setTtsKey] = useState('');
+  const [dashVoice, setDashVoice] = useState(TTS_DEFAULTS.DEFAULT_DASH_VOICE);
 
   useEffect(() => {
     if (open) {
@@ -33,6 +37,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) =
       if (config.ocrKey) setOcrKey(config.ocrKey);
       if (config.ocrBaseURL) setOcrBaseURL(config.ocrBaseURL);
       if (config.ocrModel) setOcrModel(config.ocrModel);
+      if (config.ttsKey) setTtsKey(config.ttsKey);
+      if (config.dashVoice) setDashVoice(config.dashVoice);
       setTestStatus('idle');
       setTestMessage('');
       setSaved(false);
@@ -104,16 +110,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) =
   };
 
   const handleSave = async () => {
+    saveApiConfig({ preset, apiKey, baseURL, ocrKey, ocrBaseURL, ocrModel, ttsKey, dashVoice });
+    setSaved(true);
+    // 未填 Key：允许使用服务端 .env 配置，直接保存关闭
     if (!apiKey.trim()) {
-      setTestStatus('error');
-      setTestMessage('请先填写 API Key，否则无法生成讲解');
+      setTestStatus('success');
+      setTestMessage('配置已保存（将使用服务端 .env 的 Key）');
+      setTimeout(() => { setSaved(false); onClose(); }, 1000);
       return;
     }
-    saveApiConfig({ preset, apiKey, baseURL, ocrKey, ocrBaseURL, ocrModel });
-    setSaved(true);
-    // 保存后自动测试连接，给用户明确反馈
+    // 已填 Key：保存后自动测试连接
     setTestStatus('testing');
     setTestMessage('正在测试连接…');
+    let saveOk = false;
     try {
       const res = await fetch('/api/test-config', {
         method: 'POST',
@@ -122,6 +131,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) =
       });
       const data = await res.json();
       if (data.success) {
+        saveOk = true;
         setTestStatus('success');
         setTestMessage('配置已保存，连接成功！现在可以去生成视频了。');
       } else {
@@ -132,9 +142,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) =
       setTestStatus('error');
       setTestMessage('配置已保存，但无法连接后端服务');
     }
+    // 成功才自动关闭；失败保留弹窗让用户看到错误
     setTimeout(() => {
       setSaved(false);
-      onClose();
+      if (saveOk) onClose();
     }, 1500);
   };
 
@@ -302,6 +313,45 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) =
                   {ocrTestMessage}
                 </div>
               )}
+            </div>
+          </div>
+
+          {/* 语音合成（TTS） */}
+          <div className="border-t border-gray-100 dark:border-zinc-800 pt-5">
+            <div className="flex items-center gap-2 mb-3">
+              <svg className="w-4 h-4 text-cyan-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5L6 9H2v6h4l5 4V5z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.5 8.5a5 5 0 010 7" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.5 5.5a9 9 0 010 13" />
+              </svg>
+              <label className="text-xs font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wide">语音合成（TTS）</label>
+            </div>
+            <p className="text-xs text-gray-400 dark:text-zinc-500 mb-3 leading-relaxed">
+              配音优先用免费的 edge-tts；连接不上时自动回退到国内稳定的 DashScope CosyVoice。回退需要 DashScope Key 与音色，不配则静默跳过回退。
+            </p>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wide mb-1.5">DashScope TTS Key（回退用，可留空）</label>
+                <input
+                  type="password"
+                  value={ttsKey}
+                  onChange={(e) => setTtsKey(e.target.value)}
+                  placeholder="sk-..."
+                  className="w-full px-4 py-3 bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-xl text-gray-900 dark:text-zinc-100 placeholder-gray-400 dark:placeholder-zinc-500 focus:bg-white dark:focus:bg-zinc-800 focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500 outline-none transition-colors text-sm font-mono"
+                />
+                <p className="text-xs text-gray-400 dark:text-zinc-500 mt-1.5">留空时回退复用上方「OCR」的 DashScope Key，或服务端 .env 的 DASHSCOPE_API_KEY。</p>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wide mb-1.5">回退音色（CosyVoice）</label>
+                <select
+                  value={dashVoice}
+                  onChange={(e) => setDashVoice(e.target.value)}
+                  className="w-full px-4 py-3 bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-xl text-gray-900 dark:text-zinc-100 focus:bg-white dark:focus:bg-zinc-800 focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500 outline-none transition-colors text-sm"
+                >
+                  {DASHSCOPE_VOICES.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                </select>
+                <p className="text-xs text-gray-400 dark:text-zinc-500 mt-1.5">edge-tts 正常时用编辑器里选的音色；回退到 DashScope 时用这里选的音色。</p>
+              </div>
             </div>
           </div>
 

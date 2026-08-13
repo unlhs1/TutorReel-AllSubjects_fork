@@ -1,18 +1,20 @@
 import React, { useMemo } from 'react';
-import { interpolate } from 'remotion';
+import { interpolate, useVideoConfig } from 'remotion';
 import { Block } from '../../types/problem';
 
 interface Props {
   data: Block | null;
-  progress: number; // 0-1 生长动画
+  progress: number; // 保留兼容（生长动画改用 elapsedFrames 按秒控制）
   isDark?: boolean;
+  elapsedFrames?: number; // 场景内已过帧数：柱子在 1 秒内升到顶，避免等太久
 }
 
 const W = 800;
 const H = 560;
 const PAD = { left: 60, right: 40, top: 40, bottom: 70 };
 
-export const BarVisualizer: React.FC<Props> = ({ data, progress, isDark = true }) => {
+export const BarVisualizer: React.FC<Props> = ({ data, isDark = true, elapsedFrames = 0 }) => {
+  const { fps } = useVideoConfig();
   const bars = data?.barData || [];
   const labels = data?.labels || [];
   const highlightIndex = data?.highlightIndex ?? -1;
@@ -42,13 +44,15 @@ export const BarVisualizer: React.FC<Props> = ({ data, progress, isDark = true }
     return { plotW, plotH, n, slot, barW };
   }, [bars.length]);
 
-  // 数值格式化（小数值保留足够精度）
+  // 数值格式化（真实概率值如 0.056 保留 3 位；0 显示 "0"）
   const fmtVal = (v: number): string => {
+    if (v === 0) return '0';
     const a = Math.abs(v);
     if (a >= 100) return Math.round(v).toString();
     if (a >= 10) return v.toFixed(1);
     if (a >= 1) return v.toFixed(1);
-    return v.toFixed(2);
+    if (a >= 0.1) return v.toFixed(2);
+    return v.toFixed(3);
   };
 
   if (bars.length === 0) {
@@ -91,7 +95,8 @@ export const BarVisualizer: React.FC<Props> = ({ data, progress, isDark = true }
       {bars.map((v, i) => {
         const cx = PAD.left + layout.slot * i + layout.slot / 2;
         const h = (Math.abs(v) / maxVal) * layout.plotH;
-        const grow = interpolate(progress, [0, 1], [0, h], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+        // 柱子在场景开头 1 秒内升到顶（fps 帧），之后保持全高
+        const grow = interpolate(elapsedFrames, [0, Math.max(1, fps)], [0, h], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
         const y = H - PAD.bottom - grow;
         const highlighted = i === highlightIndex;
         const fill = highlighted ? HIGHLIGHT_COLOR : BAR_COLOR;

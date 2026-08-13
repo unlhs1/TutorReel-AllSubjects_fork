@@ -8,6 +8,9 @@ export interface ApiConfig {
   ocrKey: string;
   ocrBaseURL: string;
   ocrModel: string;
+  // TTS（语音合成）配置：DashScope CosyVoice 回退
+  ttsKey: string;      // DashScope TTS key（可留空，回退时复用 OCR key 或 .env）
+  dashVoice: string;   // DashScope 回退音色 id（默认 longxiaochun）
 }
 
 export const PRESETS: Record<ApiConfig['preset'], { label: string; baseURL: string }> = {
@@ -56,4 +59,15 @@ export function getOcrConfigForRequest(): { ocrKey?: string; ocrBaseURL?: string
   };
 }
 
+// TTS（语音合成）配置：DashScope 回退 key 与音色（前端传入）
+const DEFAULT_DASH_VOICE = 'longxiaochun';
+export function getTtsConfigForRequest(): { ttsKey?: string; dashVoice?: string } {
+  const config = getApiConfig();
+  return {
+    ...(config.ttsKey ? { ttsKey: config.ttsKey } : {}),
+    ...(config.dashVoice && config.dashVoice !== DEFAULT_DASH_VOICE ? { dashVoice: config.dashVoice } : {}),
+  };
+}
+
 export const OCR_DEFAULTS = { DEFAULT_OCR_BASE_URL, DEFAULT_OCR_MODEL };
+export const TTS_DEFAULTS = { DEFAULT_DASH_VOICE };

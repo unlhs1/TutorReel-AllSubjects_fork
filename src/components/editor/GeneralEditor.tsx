@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { AnyProblemData, GeneralProblemData } from '../../types/problem';
-import { getApiConfigForRequest, getOcrConfigForRequest } from '../../services/apiConfig';
+import { getApiConfigForRequest, getOcrConfigForRequest, getTtsConfigForRequest } from '../../services/apiConfig';
 import { streamSSE } from '../../services/streamSSE';
 import { ocrImage, OcrFigure } from '../../services/ocr';
 import { TTS_VOICES } from '../../services/ttsVoices';
@@ -56,6 +56,17 @@ export const GeneralEditor: React.FC<GeneralEditorProps> = ({ initialData, onCha
     '正在生成动画数据…',
   ];
 
+  // 防双提交（isGenerating 异步赋值，连点会双提交）
+  const isGeneratingRef = useRef(false);
+  // 卸载守卫：异步回调完成后组件可能已卸载
+  const mountedRef = useRef(true);
+  // OCR 竞态守卫：连续换图时丢弃过期结果
+  const ocrSeqRef = useRef(0);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
   React.useEffect(() => {
     const id = initialData?.id || Date.now().toString();
     let parsedScenes: GeneralProblemData['script']['scenes'] = [];
@@ -73,30 +84,36 @@ export const GeneralEditor: React.FC<GeneralEditorProps> = ({ initialData, onCha
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (imagePreview) URL.revokeObjectURL(imagePreview); // 释放旧预览
     const url = URL.createObjectURL(file);
     setImagePreview(url);
     void runOcr(file);
   };
 
   const runOcr = async (file: File) => {
+    const seq = ++ocrSeqRef.current; // 竞态守卫：连续换图时丢弃过期结果
     setIsOcrLoading(true);
     setErrorMessage('');
     try {
       const { text, figures: fg, figureSummary: fs } = await ocrImage(file);
+      if (!mountedRef.current || seq !== ocrSeqRef.current) return;
       if (!text.trim()) throw new Error('未识别到有效文字');
       setRawText(text);
       setFigures(fg);
       setFigureSummary(fs);
     } catch (err) {
+      if (seq !== ocrSeqRef.current) return;
       const msg = err instanceof Error ? err.message : 'OCR 识别失败';
       setErrorMessage(msg);
     } finally {
-      setIsOcrLoading(false);
+      if (seq === ocrSeqRef.current) setIsOcrLoading(false);
     }
   };
 
   const handleAutoGenerate = async () => {
     if (!rawText.trim()) return;
+    if (isGeneratingRef.current) return; // 防双提交
+    isGeneratingRef.current = true;
     setIsGenerating(true);
     setLoadingStep(0);
     setErrorMessage('');
@@ -105,8 +122,9 @@ export const GeneralEditor: React.FC<GeneralEditorProps> = ({ initialData, onCha
     }, 3000);
     try {
       const parsedData = await streamSSE('/api/parse', {
-        rawText, model: aiModel, voice, figures, figureSummary, ...getApiConfigForRequest(), ...getOcrConfigForRequest(),
+        rawText, model: aiModel, voice, figures, figureSummary, ...getApiConfigForRequest(), ...getOcrConfigForRequest(), ...getTtsConfigForRequest(),
       } as Record<string, unknown>);
+      if (!mountedRef.current) return; // 组件已卸载，丢弃结果
 
       if (parsedData.title) setTitle(parsedData.title);
       if (parsedData.topic) setTopic(parsedData.topic);
@@ -127,6 +145,7 @@ export const GeneralEditor: React.FC<GeneralEditorProps> = ({ initialData, onCha
     } finally {
       clearInterval(interval);
       setIsGenerating(false);
+      isGeneratingRef.current = false;
     }
   };
 
@@ -136,6 +155,8 @@ export const GeneralEditor: React.FC<GeneralEditorProps> = ({ initialData, onCha
       setErrorMessage('请先填写题干，或先用「一键生成讲解」');
       return;
     }
+    if (isGeneratingRef.current) return; // 防双提交
+    isGeneratingRef.current = true;
     setIsGenerating(true);
     setLoadingStep(0);
     setErrorMessage('');
@@ -146,13 +167,14 @@ export const GeneralEditor: React.FC<GeneralEditorProps> = ({ initialData, onCha
       const res = await fetch('/api/generate-script', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, topic, question, figures, figureSummary, model: aiModel, voice, ...getApiConfigForRequest(), ...getOcrConfigForRequest() }),
+        body: JSON.stringify({ title, topic, question, figures, figureSummary, model: aiModel, voice, ...getApiConfigForRequest(), ...getOcrConfigForRequest(), ...getTtsConfigForRequest() }),
       });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
         throw new Error((d as { error?: string }).error || '脚本重生成失败');
       }
       const data = await res.json();
+      if (!mountedRef.current) return;
       const parsedData = (data as { final: Record<string, unknown> }).final;
       const script = (parsedData.script || {}) as { opening?: string; scenes?: unknown; summary?: string };
       if (script.opening) setOpening(script.opening);
@@ -169,6 +191,7 @@ export const GeneralEditor: React.FC<GeneralEditorProps> = ({ initialData, onCha
     } finally {
       clearInterval(interval);
       setIsGenerating(false);
+      isGeneratingRef.current = false;
     }
   };
 

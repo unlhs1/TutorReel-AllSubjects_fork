@@ -37,21 +37,27 @@ export const MathTemplate: React.FC<Props> = ({ data, isDark = false }) => {
 
     const reserve = hasSummary ? fps * 4 : 0;
     const usable = Math.max(1, durationInFrames - reserve);
+    // opening 为空时不预留开场空白帧
+    const hasOpening = !!opening.trim();
     const openingFrames = hasDurations
-      ? Math.min(usable, fps * 4)
+      ? (hasOpening ? Math.min(usable, fps * 4) : 0)
       : Math.floor((opening.length / total) * usable);
     const sceneUsable = Math.max(1, usable - openingFrames);
+    // 末场景至少保留 1 帧，避免中间场景四舍五入累计溢出导致 start > end
+    const maxStart = Math.max(openingFrames, durationInFrames - reserve - 1);
     let cur = openingFrames;
     return scenes.map((s, i) => {
       if (i === scenes.length - 1) {
-        return { start: cur, end: durationInFrames - reserve };
+        return { start: Math.min(cur, maxStart), end: durationInFrames - reserve };
       }
       const weight = hasDurations ? s.duration as number : (s.spokenText || s.text).length;
-      const seg = hasDurations
+      let seg = hasDurations
         ? Math.round((weight / totalSceneDur) * sceneUsable)
         : Math.floor((weight / total) * usable);
+      seg = Math.max(1, seg);
+      if (cur + seg > maxStart) seg = Math.max(1, maxStart - cur);
       const start = cur;
-      cur = start + Math.max(1, seg);
+      cur = start + seg;
       return { start, end: cur };
     });
   }, [scenes, opening, durationInFrames, fps, hasSummary]);
@@ -86,7 +92,9 @@ export const MathTemplate: React.FC<Props> = ({ data, isDark = false }) => {
     : 0;
 
   // 块入场动画（按块 index 依次延迟，快速克制）
+  // delay ≥ 1 时直接全入场（避免 interpolate 输入区间递减抛错）
   const blockAnim = (anim: Block['animation'], delay: number) => {
+    if (delay >= 1) return { opacity: 1, transform: 'none' };
     const p = interpolate(rawProgress, [delay, Math.min(1, delay + 0.12)], [0, 1], {
       easing: EASE_SMOOTH, extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
     });
@@ -98,7 +106,7 @@ export const MathTemplate: React.FC<Props> = ({ data, isDark = false }) => {
 
   // 渲染一个元素块（注册表驱动 + 自由定位 + 入场动画）
   const renderBlock = (block: Block, i: number) => {
-    const anim = blockAnim(block.animation, i * 0.08);
+    const anim = blockAnim(block.animation, Math.min(0.9, i * 0.08));
     // image 块：容器高度按图的实际宽高比计算（pos.w 的像素宽 / imageRatio），
     // 不依赖 LLM 给的 pos.h（LLM 常给 8-10% 的扁高度把图压成小条）。上限 68% 防超高溢出，下限 22% 兜底。
     let effectiveH = block.pos.h;
@@ -108,6 +116,8 @@ export const MathTemplate: React.FC<Props> = ({ data, isDark = false }) => {
         effectiveH = Math.max(effectiveH, Math.min(desiredPct, 68));
       }
       effectiveH = Math.max(effectiveH, 22);
+      // 防止 y + height 超出画布底部
+      effectiveH = Math.min(effectiveH, Math.max(10, 100 - (block.pos.y || 0)));
     }
     const baseStyle: React.CSSProperties = {
       position: 'absolute',
@@ -133,6 +143,7 @@ export const MathTemplate: React.FC<Props> = ({ data, isDark = false }) => {
           width,
           height,
           prevPlot: prevScene?.blocks?.find(b => b.type === 'plot') || null,
+          elapsedFrames: isReadingPhase ? 0 : Math.max(0, frame - sceneFrames[idx].start),
         })}
       </div>
     );

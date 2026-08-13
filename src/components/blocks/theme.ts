@@ -78,13 +78,14 @@ export function renderMixedLatex(text: string): string {
   if (!text) return '';
   let html = '';
   let matched = false;
-  const regex = /\\\(([\s\S]*?)\\\)|\$([^$]*?)\$/g;
+  // 依次匹配：$$...$$（显示公式）、\(...\)、$...$（行内）；避免 $$ 被单 $ 吞掉
+  const regex = /\\\(([\s\S]*?)\\\)|\$\$([\s\S]*?)\$\$|\$([^$\n]*?)\$/g;
   let lastIndex = 0;
   let m: RegExpExecArray | null;
   while ((m = regex.exec(text)) !== null) {
     matched = true;
     html += escapeHtml(text.slice(lastIndex, m.index));
-    const latex = (m[1] || m[2] || '').trim();
+    const latex = (m[1] || m[2] || m[3] || '').trim();
     if (latex) {
       try {
         html += katex.renderToString(latex, { throwOnError: false, displayMode: false, strict: false });

@@ -21,7 +21,7 @@ export async function testConnection(config: LLMConfig): Promise<void> {
   await client.models.list();
 }
 
-export async function splitTextToProblems(rawText: string, modelName: string = 'deepseek-chat', config?: LLMConfig): Promise<Array<{ title: string, question: string, type: ProblemType }>> {
+export async function splitTextToProblems(rawText: string, modelName: string = 'deepseek-v4-flash', config?: LLMConfig): Promise<Array<{ title: string, question: string, type: ProblemType }>> {
   const systemPrompt = `你是一个智能题目提取助手。你的任务是从用户输入的一长段文本中，识别并提取出多个独立的面试题或知识点题目。
 文本可能是面经、八股文汇总或题库列表。
 
@@ -65,23 +65,39 @@ export async function splitTextToProblems(rawText: string, modelName: string = '
 export async function callLLM(
   systemPrompt: string,
   userContent: string,
-  modelName: string = 'deepseek-chat',
+  modelName: string = 'deepseek-v4-flash',
   config?: LLMConfig
 ): Promise<string> {
   const client = createClient(config);
-  const response = await client.chat.completions.create({
-    model: modelName,
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userContent },
-    ],
-    response_format: { type: 'json_object' },
-    temperature: 0.1,
-  });
-  return response.choices[0].message.content || '{}';
+  const messages = [
+    { role: 'system' as const, content: systemPrompt },
+    { role: 'user' as const, content: userContent },
+  ];
+  try {
+    const response = await client.chat.completions.create({
+      model: modelName,
+      messages,
+      response_format: { type: 'json_object' },
+      temperature: 0.1,
+    }, { timeout: 120000 }); // 2 分钟超时，避免模型挂起卡死整题/整批
+    return response.choices[0].message.content || '{}';
+  } catch (err) {
+    // 部分端点不支持 response_format（json_object）时降级为普通请求
+    const e = err as { status?: number; message?: string };
+    const isFormatError = e?.status === 400 && /response_format|json_object|json mode|content_type/i.test(e?.message || '');
+    if (isFormatError) {
+      const response = await client.chat.completions.create({
+        model: modelName,
+        messages,
+        temperature: 0.1,
+      }, { timeout: 120000 });
+      return response.choices[0].message.content || '{}';
+    }
+    throw err;
+  }
 }
 
-export async function parseProblemWithLLM(rawText: string, targetType: ProblemType, modelName: string = 'deepseek-chat', language: string = 'javascript', config?: LLMConfig) {
+export async function parseProblemWithLLM(rawText: string, targetType: ProblemType, modelName: string = 'deepseek-v4-flash', language: string = 'javascript', config?: LLMConfig) {
   const systemPrompt = `你是一个专业的教师和题解视频文案编写专家。你的任务是将用户输入的原始题目文本，解析并结构化为特定类型的 JSON 格式数据。
 这个 JSON 数据将直接用于生成带配音的视频。因此，你的 explanation (讲解文案) 字段应该像口语化的老师讲课一样，生动、清晰、循序渐进。
 

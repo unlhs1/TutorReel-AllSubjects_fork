@@ -60,8 +60,6 @@ export const ComparisonVisualizer: React.FC<Props> = ({ comparisonData, activeSt
               config: { damping: 18, stiffness: 120, mass: 0.8 }
             });
             
-            const isHighlighted = isActive && activeStepIndex > 0; // only highlight after step 0
-
             return (
               <div 
                 key={rowIndex}

@@ -1,20 +1,36 @@
-import { AnyProblemData, ProblemType } from '../types/problem';
-import { parseProblemWithLLM, LLMConfig } from './llm';
-import { generateTTS } from './tts';
+import { AnyProblemData } from '../types/problem';
+import { LLMConfig } from './llm';
+import { generateVideoScript } from './videoScript';
 import { exportQueue } from './exportQueue';
 
 export type BatchTaskStatus = 'pending' | 'parsing' | 'tts' | 'rendering' | 'done' | 'failed';
 
-export interface BatchItem {
-  id: string;
+// 批量任务里的一道学科题（支持文本题与带 OCR 图的题）
+export interface BatchItemInput {
   title: string;
   question: string;
-  type: ProblemType;
+  topic?: string;
+  figures?: Array<{ id: string; url: string; description?: string; ratio?: number }>;
+  figureSummary?: string;
+}
+
+export interface BatchItem extends BatchItemInput {
+  id: string;
   status: BatchTaskStatus;
   progress: number; // 0-100 for current step, or just overall
   error?: string;
   videoUrl?: string;
   data?: AnyProblemData;
+}
+
+export interface BatchJobConfig {
+  apiKey?: string;
+  baseURL?: string;
+  model?: string;
+  voice?: string;
+  ocrKey?: string;      // DashScope key（OCR / TTS 回退兜底）
+  ttsKey?: string;      // 独立 TTS 回退 key（优先于 ocrKey）
+  dashVoice?: string;   // DashScope 回退音色
 }
 
 export interface BatchJob {
@@ -23,22 +39,24 @@ export interface BatchJob {
   status: 'running' | 'done' | 'failed';
   createdAt: number;
   llmConfig?: LLMConfig;
-  model?: string;
+  config?: BatchJobConfig;
 }
 
 class BatchQueue {
   private jobs: Map<string, BatchJob> = new Map();
 
   createJob(
-    itemsData: Array<{ title: string; question: string; type: ProblemType }>,
-    config?: { apiKey?: string; baseURL?: string; model?: string }
+    itemsData: BatchItemInput[],
+    config?: BatchJobConfig
   ): BatchJob {
     const jobId = `batch_${Date.now()}`;
     const items: BatchItem[] = itemsData.map((item, index) => ({
       id: `${jobId}_item_${index}`,
       title: item.title,
       question: item.question,
-      type: item.type,
+      topic: item.topic,
+      figures: item.figures,
+      figureSummary: item.figureSummary,
       status: 'pending',
       progress: 0,
     }));
@@ -49,7 +67,7 @@ class BatchQueue {
       status: 'running',
       createdAt: Date.now(),
       llmConfig: config ? { apiKey: config.apiKey, baseURL: config.baseURL } : undefined,
-      model: config?.model,
+      config,
     };
 
     this.jobs.set(jobId, job);
@@ -80,83 +98,57 @@ class BatchQueue {
         await this.processItem(jobId, item);
       } catch (error) {
         console.error(`Error processing batch item ${item.id}:`, error);
-        this.updateItemStatus(jobId, item.id, { 
-          status: 'failed', 
-          error: error instanceof Error ? error.message : 'Unknown error' 
+        this.updateItemStatus(jobId, item.id, {
+          status: 'failed',
+          error: error instanceof Error ? error.message : 'Unknown error'
         });
       }
     }
 
     job.status = 'done';
     this.jobs.set(jobId, job);
+    this.scheduleCleanup(jobId);
+  }
+
+  // 完成后 30 分钟从内存清理，避免 job（含完整视频数据）长期泄漏
+  private scheduleCleanup(jobId: string): void {
+    setTimeout(() => {
+      if (this.jobs.delete(jobId)) {
+        console.log(`[batchQueue] job ${jobId} 已清理`);
+      }
+    }, 30 * 60 * 1000);
   }
 
   private async processItem(jobId: string, item: BatchItem) {
     this.updateItemStatus(jobId, item.id, { status: 'parsing', progress: 10 });
-    
-    // 1. LLM Parsing
-    const rawText = `${item.title}\n${item.question}`;
+
+    // 1. 走通用学科流水线：Stage2 初稿 → Stage3 审片 → Stage4 验证 → 组装 imageUrl → TTS
     const job = this.jobs.get(jobId);
-    const stream = await parseProblemWithLLM(rawText, item.type, job?.model ?? 'deepseek-chat', 'javascript', job?.llmConfig);
-    
-    let fullJsonText = '';
-    for await (const chunk of stream) {
-      const content = chunk.choices[0]?.delta?.content || '';
-      if (content) {
-        fullJsonText += content;
-      }
-    }
+    const llmConfig: LLMConfig = {};
+    if (job?.llmConfig?.apiKey) llmConfig.apiKey = job.llmConfig.apiKey;
+    if (job?.llmConfig?.baseURL) llmConfig.baseURL = job.llmConfig.baseURL;
 
-    let cleanJsonText = fullJsonText.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
-    cleanJsonText = cleanJsonText.replace(/^```json/im, '').replace(/```$/m, '').trim();
-    
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let parsedData: any = {};
-    try {
-      parsedData = JSON.parse(cleanJsonText);
-    } catch {
-      throw new Error('Failed to parse LLM output');
-    }
+    const analysis = { title: item.title, topic: item.topic || '', question: item.question };
+    const ttsApiKey = job?.config?.ttsKey || job?.config?.ocrKey;
+    const finalData = await generateVideoScript(
+      analysis,
+      item.figures || [],
+      item.figureSummary || '',
+      job?.config?.model ?? 'deepseek-v4-flash',
+      llmConfig,
+      job?.config?.voice,
+      ttsApiKey,
+      job?.config?.dashVoice,
+    );
 
-    this.updateItemStatus(jobId, item.id, { status: 'tts', progress: 40 });
+    finalData.id = item.id;
+    if (!finalData.title) finalData.title = item.title;
+    if (!finalData.question) finalData.question = item.question;
 
-    // 2. TTS Generation
-    let explanationText = '';
-    if ('steps' in parsedData && Array.isArray(parsedData.steps)) {
-      const stepsArray = parsedData.steps as Array<{ text: string, spokenText?: string }>;
-      explanationText = stepsArray.map(step => step.spokenText || step.text).join('。');
-    } else {
-      explanationText = parsedData.explanation as string || '';
-    }
-    
-    const problemReading = 'problemReading' in parsedData ? parsedData.problemReading as string : '';
-    const ttsText = (problemReading ? problemReading + '。' : '') + explanationText;
+    // 2. Rendering（等待 exportQueue）
+    this.updateItemStatus(jobId, item.id, { status: 'rendering', progress: 60, data: finalData });
+    exportQueue.addTask(item.id, finalData);
 
-    if (ttsText) {
-      try {
-        const { audioUrl, durationInSeconds } = await generateTTS(ttsText, item.id);
-        parsedData.audioUrl = audioUrl;
-        const fps = 30;
-        parsedData.durationInFrames = Math.ceil(durationInSeconds * fps) + (2 * fps);
-      } catch (ttsError) {
-        console.error('Failed to generate TTS:', ttsError);
-        parsedData.durationInFrames = 500;
-      }
-    } else {
-      parsedData.durationInFrames = 500;
-    }
-
-    // Assign id and title if missing
-    parsedData.id = item.id;
-    parsedData.type = item.type;
-    if (!parsedData.title) parsedData.title = item.title;
-    if (!parsedData.question) parsedData.question = item.question;
-
-    this.updateItemStatus(jobId, item.id, { status: 'rendering', progress: 60, data: parsedData });
-
-    // 3. Rendering (Wait for exportQueue)
-    exportQueue.addTask(item.id, parsedData);
-    
     // Poll for export completion (max 5-minute timeout)
     const MAX_POLL_MS = 300_000;
     const pollStart = Date.now();
@@ -181,10 +173,10 @@ class BatchQueue {
           this.updateItemStatus(jobId, item.id, { progress: renderProgress });
         } else if (status.status === 'done') {
           clearInterval(interval);
-          this.updateItemStatus(jobId, item.id, { 
-            status: 'done', 
+          this.updateItemStatus(jobId, item.id, {
+            status: 'done',
             progress: 100,
-            videoUrl: status.outputUrl 
+            videoUrl: status.outputUrl
           });
           resolve();
         } else if (status.status === 'failed') {

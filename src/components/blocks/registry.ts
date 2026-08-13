@@ -14,6 +14,7 @@ export interface ControlContext {
   width: number;         // 视频画布宽（px）
   height: number;        // 视频画布高（px）
   prevPlot: Block | null; // 上个场景的 plot 块（用于图形过渡）
+  elapsedFrames: number; // 场景内已过帧数（用于生长/绘制类动画按秒精确控制）
 }
 
 export type ControlRenderer = (ctx: ControlContext) => React.ReactNode | null;

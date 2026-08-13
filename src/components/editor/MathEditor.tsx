@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { AnyProblemData, MathProblemData } from '../../types/problem';
-import { getApiConfigForRequest } from '../../services/apiConfig';
+import { getApiConfigForRequest, getTtsConfigForRequest } from '../../services/apiConfig';
 import { streamSSE } from '../../services/streamSSE';
 import { ocrImage } from '../../services/ocr';
 import { TTS_VOICES } from '../../services/ttsVoices';
@@ -39,6 +39,13 @@ export const MathEditor: React.FC<MathEditorProps> = ({ initialData, onChange, o
   const [isGenerating, setIsGenerating] = useState(false);
   const [loadingStep, setLoadingStep] = useState(0);
   const [errorMessage, setErrorMessage] = useState('');
+  // 防双提交 + 卸载守卫
+  const isGeneratingRef = useRef(false);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   // 图片上传 + OCR
   const [imagePreview, setImagePreview] = useState<string>('');
@@ -92,6 +99,8 @@ export const MathEditor: React.FC<MathEditorProps> = ({ initialData, onChange, o
 
   const handleAutoGenerate = async () => {
     if (!rawText.trim()) return;
+    if (isGeneratingRef.current) return; // 防双提交
+    isGeneratingRef.current = true;
     setIsGenerating(true);
     setLoadingStep(0);
     setErrorMessage('');
@@ -100,8 +109,9 @@ export const MathEditor: React.FC<MathEditorProps> = ({ initialData, onChange, o
     }, 2000);
     try {
       const parsedData = await streamSSE('/api/parse', {
-        rawText, targetType: 'math', model: aiModel, voice, ...getApiConfigForRequest(),
+        rawText, targetType: 'math', model: aiModel, voice, ...getApiConfigForRequest(), ...getTtsConfigForRequest(),
       } as Record<string, unknown>);
+      if (!mountedRef.current) return; // 组件已卸载，丢弃结果
 
       if (parsedData.title) setTitle(parsedData.title);
       if (parsedData.knowledgePoint) setKnowledgePoint(parsedData.knowledgePoint);
@@ -122,6 +132,7 @@ export const MathEditor: React.FC<MathEditorProps> = ({ initialData, onChange, o
     } finally {
       clearInterval(interval);
       setIsGenerating(false);
+      isGeneratingRef.current = false;
     }
   };
 

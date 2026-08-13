@@ -46,12 +46,19 @@ export function VideoProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const updateAudio = useCallback((audioUrl: string, durationInFrames: number, subtitles?: SubtitleSegment[]) => {
-    setVideoDataState(prev => ({
-      ...prev,
-      audioUrl,
-      durationInFrames,
-      ...(subtitles ? { subtitles } : {}),
-    }));
+    setVideoDataState(prev => {
+      const next: AnyProblemData = {
+        ...prev,
+        audioUrl,
+        durationInFrames,
+        ...(subtitles ? { subtitles } : {}),
+      };
+      // 同步持久化，避免刷新后 audioUrl 丢失
+      try {
+        localStorage.setItem(DRAFT_KEYS.standard, JSON.stringify(next));
+      } catch { /* localStorage full */ }
+      return next;
+    });
   }, []);
 
   return (

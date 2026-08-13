@@ -145,9 +145,9 @@ registerControl({
 });
 registerControl({
   type: 'bar',
-  render: ({ block, progress, isDark }) => (
+  render: ({ block, progress, isDark, elapsedFrames }) => (
     <div style={{ padding: 6 }}>
-      <BarVisualizer data={block} progress={progress} isDark={isDark} />
+      <BarVisualizer data={block} progress={progress} isDark={isDark} elapsedFrames={elapsedFrames} />
     </div>
   ),
 });
