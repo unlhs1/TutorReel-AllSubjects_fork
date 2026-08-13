@@ -4,7 +4,7 @@ import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls, Grid } from '@react-three/drei';
 import * as THREE from 'three';
-import { ParsedGraph, compileExpr, buildSurfaceMesh, zToColor } from '../../services/math3dParser';
+import { ParsedGraph, compileExpr, compileComplexExpr, compileComplexValued, buildSurfaceMesh, zToColor, displayVar } from '../../services/math3dParser';
 
 interface Props {
   graph: ParsedGraph;
@@ -100,6 +100,151 @@ function SurfaceMesh({ expr, range = 2.5, isDark }: { expr: string; range: numbe
       </lineSegments>
     </group>
   );
+}
+
+// ── 复数函数曲面（复数模式）──
+// 水平面 = 复平面（x 实部、y 虚部），纵轴 = |f(z)|（模，钳制防奇点冲高），顶点色 = 相位 arg f(z)（色相环）
+// 颜色语义：红色相位 0°、青色 ±180°、绿色 ±90°、紫红 ±135°——一眼看出函数值方向
+function phaseHueToRgb(h: number): [number, number, number] {
+  // h ∈ [0, 360)，s=0.9, l=0.55 的 HSL → RGB
+  const s = 0.9, l = 0.55;
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const hp = h / 60;
+  const x = c * (1 - Math.abs((hp % 2) - 1));
+  let r = 0, g = 0, b = 0;
+  if (hp < 1) { r = c; g = x; }
+  else if (hp < 2) { r = x; g = c; }
+  else if (hp < 3) { g = c; b = x; }
+  else if (hp < 4) { g = x; b = c; }
+  else if (hp < 5) { r = x; b = c; }
+  else { r = c; b = x; }
+  const m = l - c / 2;
+  return [r + m, g + m, b + m];
+}
+
+function ComplexSurfaceMesh({ expr, range = 2.5 }: { expr: string; range: number }) {
+  const [meshRange, setMeshRange] = useState(range);
+  const lastDistRef = useRef<number>(0);
+
+  // 相机距离 → 曲面显示范围（与普通曲面一致：拉远延伸）
+  useFrame(({ camera }) => {
+    const dist = camera.position.length();
+    const target = Math.max(range, dist * 1.2);
+    if (Math.abs(target - lastDistRef.current) / (lastDistRef.current || 1) > 0.12) {
+      lastDistRef.current = target;
+      setMeshRange(target);
+    }
+  });
+
+  const { positions, index, phases } = useMemo(() => {
+    const f = compileComplexExpr(expr);
+    const segments = 64;
+    const positions = new Float32Array((segments + 1) * (segments + 1) * 3);
+    const index = new Uint32Array(segments * segments * 6);
+    const phases = new Float32Array((segments + 1) * (segments + 1));
+    const cap = meshRange * 1.5; // 模钳制（1/z 等奇点冲高）
+    for (let iy = 0; iy <= segments; iy++) {
+      const y = -meshRange + (2 * meshRange * iy) / segments;
+      for (let ix = 0; ix <= segments; ix++) {
+        const x = -meshRange + (2 * meshRange * ix) / segments;
+        const w = f ? f(x, y) : null;
+        const mag = w ? Math.min(Math.hypot(w.re, w.im), cap) : 0;
+        const phase = w && mag > 1e-9 ? Math.atan2(w.im, w.re) : 0;
+        const p = (iy * (segments + 1) + ix) * 3;
+        positions[p] = x;
+        positions[p + 1] = mag;
+        positions[p + 2] = y;
+        phases[iy * (segments + 1) + ix] = phase;
+      }
+    }
+    for (let iy = 0; iy < segments; iy++) {
+      for (let ix = 0; ix < segments; ix++) {
+        const a = iy * (segments + 1) + ix;
+        const b = a + 1;
+        const c = a + (segments + 1);
+        const d = c + 1;
+        const o = (iy * segments + ix) * 6;
+        index[o] = a; index[o + 1] = c; index[o + 2] = b;
+        index[o + 3] = b; index[o + 4] = c; index[o + 5] = d;
+      }
+    }
+    return { positions, index, phases };
+  }, [expr, meshRange]);
+
+  const geometry = useMemo(() => {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setIndex(new THREE.BufferAttribute(index, 1));
+    geo.computeVertexNormals();
+    // 顶点色：色相 = 相位（arg w），-π..π → 0..360
+    const colors = new Float32Array(positions.length);
+    for (let i = 0; i < phases.length; i++) {
+      const hue = ((phases[i] / Math.PI) * 180 + 360) % 360;
+      const [r, g, b] = phaseHueToRgb(hue);
+      colors[i * 3] = r; colors[i * 3 + 1] = g; colors[i * 3 + 2] = b;
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    return geo;
+  }, [positions, index, phases]);
+
+  // 稀疏网格线（保留立体感但不掩盖相位渐变色）
+  const gridLines = useMemo(() => {
+    const g = new THREE.BufferGeometry();
+    const width = 65, height = 65;
+    g.setAttribute('position', new THREE.Float32BufferAttribute(
+      buildSparseGridLines(positions, width, height), 3));
+    return g;
+  }, [positions]);
+
+  return (
+    <group>
+      <mesh geometry={geometry}>
+        <meshStandardMaterial vertexColors side={THREE.DoubleSide}
+          roughness={0.5} metalness={0.05} transparent opacity={0.95} />
+      </mesh>
+      <lineSegments geometry={gridLines}>
+        <lineBasicMaterial color="#475569" transparent opacity={0.4} />
+      </lineSegments>
+    </group>
+  );
+}
+
+// ── 复值函数螺旋线（复数坐标模式）：实变量 t 扫过 → w = f(t) 为复值 ──
+// 3D 参数曲线 (t, Re f, Im f)：X = 实输入轴，Y = 实部，Z = 虚部；顶点色 = 相位 arg f
+// 经典例子：e^(j*omega) → 单位圆螺旋；e^(j*omega)+1 → 圆心平移到 (1,0) 的螺旋
+function SpiralCurve({ expr, varName, baseRange }: { expr: string; varName: string; baseRange: number }) {
+  const { lineObj, cleanup } = useMemo(() => {
+    const f = compileComplexValued(expr, varName);
+    const N = 500;
+    const pts: number[] = [];
+    const colors: number[] = [];
+    let prev: [number, number, number] | null = null;
+    for (let i = 0; i <= N; i++) {
+      const t = -baseRange + (2 * baseRange * i) / N;
+      const w = f ? f(t) : null;
+      const re = w ? w.re : 0;
+      const im = w ? w.im : 0;
+      if (!isFinite(re) || !isFinite(im)) {
+        prev = null; // 断点（奇点）
+        continue;
+      }
+      const phase = Math.hypot(re, im) > 1e-9 ? Math.atan2(im, re) : 0;
+      const hue = ((phase / Math.PI) * 180 + 360) % 360;
+      const [r, g, b] = phaseHueToRgb(hue);
+      // 断点处断开（用 -1,-1,-1 哨兵分割子段，LineSegments 需要成对——改用多条 Line）
+      void prev;
+      pts.push(t, re, im);
+      colors.push(r, g, b);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    g.computeBoundingSphere();
+    const m = new THREE.LineBasicMaterial({ vertexColors: true });
+    return { lineObj: new THREE.Line(g, m), cleanup: () => { g.dispose(); m.dispose(); } };
+  }, [expr, varName, baseRange]);
+  useEffect(() => cleanup, [cleanup]);
+  return <primitive object={lineObj} />;
 }
 
 // ── 几何体（立方体/球体/圆柱）──
@@ -298,7 +443,9 @@ function AxisTick({ value, dir, color }: {
 }
 
 // 无限网格 + 三轴（正方向箭头 + 标签 + 刻度，随视角延伸）
-function CoordGrid({ range = 5, isDark }: { range?: number; isDark?: boolean }) {
+// 复数坐标模式：曲面 → X=Re(z)、Y=Im(z)、Z=|f(z)|；螺旋线 → X=实输入变量、Y=Re f、Z=Im f
+function CoordGrid({ range = 5, isDark, isComplex = false, isSpiral = false, varName = 't' }:
+  { range?: number; isDark?: boolean; isComplex?: boolean; isSpiral?: boolean; varName?: string }) {
   const gridCell = isDark ? '#334155' : '#cbd5e1';
   const gridSection = isDark ? '#475569' : '#94a3b8';
   const axisX = isDark ? '#f87171' : '#dc2626';
@@ -347,10 +494,10 @@ function CoordGrid({ range = 5, isDark }: { range?: number; isDark?: boolean }) 
         infiniteGrid
       />
 
-      {/* 三轴：正半轴箭头 + 标签随视角延伸 */}
-      <DynamicAxis dir={[1, 0, 0]} color={axisX} label="+X" />
-      <DynamicAxis dir={[0, 1, 0]} color={axisY} label="+Y" />
-      <DynamicAxis dir={[0, 0, 1]} color={axisZ} label="+Z" />
+      {/* 三轴：正半轴箭头 + 标签随视角延伸（复数坐标：曲面 Re/Im/|f|，螺旋线 变量/Re/Im） */}
+      <DynamicAxis dir={[1, 0, 0]} color={axisX} label={isComplex ? (isSpiral ? `+${displayVar(varName)}` : '+Re(z)') : '+X'} />
+      <DynamicAxis dir={[0, 1, 0]} color={axisY} label={isComplex ? '+Re' : '+Y'} />
+      <DynamicAxis dir={[0, 0, 1]} color={axisZ} label={isComplex ? (isSpiral ? '+Im' : '+|f(z)|') : '+Z'} />
 
       {/* 刻度数字：正负方向，随视角延伸 */}
       {ticks.map(v => (
@@ -432,9 +579,16 @@ export const Graph3D: React.FC<Props> = ({ graph, isDark = true, range = 2.5, sh
     : graph.kind === 'solid' ? 'solid'
     : 'curve3d';
 
-  // 悬浮坐标函数值计算：曲面 z=f(x,y)，曲线 y=f(x)
+  // 悬浮坐标函数值计算：曲面 z=f(x,y)（复数坐标：|f(z)|），曲线 y=f(x)；螺旋线无高度值
   const hoverEval = useMemo(() => {
-    if (graph.kind === 'surface') {
+    if (graph.kind === 'surface' && !graph.isSpiral) {
+      if (graph.isComplex) {
+        const f = compileComplexExpr(graph.expr);
+        return f ? ((x: number, y: number) => {
+          const w = f(x, y);
+          return w ? Math.hypot(w.re, w.im) : null;
+        }) : null;
+      }
       const f = compileExpr(graph.expr);
       return f ? ((x: number, z: number) => f({ x, y: z })) : null;
     }
@@ -459,14 +613,19 @@ export const Graph3D: React.FC<Props> = ({ graph, isDark = true, range = 2.5, sh
         <directionalLight position={[6, 8, 4]} intensity={1.1} />
         <directionalLight position={[-4, -2, -3]} intensity={0.35} color={isDark ? '#3b82f6' : '#ffffff'} />
 
-        {graph.kind === 'surface' && <SurfaceMesh expr={graph.expr} range={range} isDark={isDark} />}
+        {graph.kind === 'surface' && (graph.isSpiral
+          ? <SpiralCurve expr={graph.expr} varName={graph.complexVar || graph.vars[0] || 't'} baseRange={range * 2} />
+          : graph.isComplex
+            ? <ComplexSurfaceMesh expr={graph.expr} range={range} />
+            : <SurfaceMesh expr={graph.expr} range={range} isDark={isDark} />)}
         {graph.kind === 'solid' && graph.solid && (
           <SolidMesh solid={graph.solid} cutOffset={cutOffset} cutTilt={cutTilt} isDark={isDark} />
         )}
         {graph.kind === 'curve' && (
           <SpaceCurve expr={graph.expr} variable={graph.vars[0] || 'x'} baseRange={range * 2} />
         )}
-        {showGrid && <CoordGrid range={range * 2} isDark={isDark} />}
+        {showGrid && <CoordGrid range={range * 2} isDark={isDark} isComplex={!!graph.isComplex}
+          isSpiral={!!graph.isSpiral} varName={graph.complexVar || graph.vars[0] || 't'} />}
 
         <HoverCoord onHover={setHoverPos} evalValue={hoverEval} />
 
@@ -483,12 +642,14 @@ export const Graph3D: React.FC<Props> = ({ graph, isDark = true, range = 2.5, sh
         <OrbitControls enableDamping dampingFactor={0.08} makeDefault />
       </Canvas>
 
-      {/* 悬浮坐标提示（DOM overlay）：显示地面坐标 + 鼠标位置的函数值 */}
+      {/* 悬浮坐标提示（DOM overlay）：显示地面坐标 + 鼠标位置的函数值（复数坐标：|f|） */}
       {hoverPos && (
         <div className="absolute top-2.5 right-2.5 px-2.5 py-1.5 rounded-lg bg-black/55 dark:bg-white/10 backdrop-blur-md text-[12px] font-mono text-white/90 pointer-events-none">
           x = {hoverPos.x.toFixed(2)}　z = {hoverPos.z.toFixed(2)}
           {hoverPos.fval !== null && (
-            <span>　{graph.kind === 'surface' ? `f = ${hoverPos.fval.toFixed(3)}` : `y = ${hoverPos.fval.toFixed(3)}`}</span>
+            <span>　{graph.kind === 'surface'
+              ? (graph.isComplex ? `|f| = ${hoverPos.fval.toFixed(3)}` : `f = ${hoverPos.fval.toFixed(3)}`)
+              : `y = ${hoverPos.fval.toFixed(3)}`}</span>
           )}
         </div>
       )}

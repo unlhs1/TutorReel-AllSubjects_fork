@@ -5,6 +5,10 @@
 import { create, all } from 'mathjs';
 
 const math = create(all, {});
+// mathjs 默认只有 i 虚数单位；j 是电气工程惯例（欧拉形式 e^(jωt)），显式注册为同一虚数单位
+try {
+  math.import({ j: math.i }, { override: true });
+} catch { /* 忽略（旧版本无 import 时不影响 i 用法） */ }
 
 // 常用 mathjs 内置函数/常量名，用于识别自由变量时排除
 const BUILTIN = new Set([
@@ -13,7 +17,7 @@ const BUILTIN = new Set([
   'sqrt', 'cbrt', 'abs', 'sign', 'floor', 'ceil', 'round', 'min',
   'max', 'pow', 'mod', 'gcd', 'lcm', 'pi', 'e', 'phi', 'tau',
   'random', 'norm', 'unit', 'true', 'false', 'NaN', 'Infinity',
-  'im', 're', 'conj', 'arg', 'sec', 'csc', 'cot',
+  'im', 're', 'conj', 'arg', 'sec', 'csc', 'cot', 'i', 'j',
 ]);
 
 export type GraphKind = 'curve' | 'surface' | 'solid';
@@ -31,6 +35,14 @@ export interface ParsedGraph {
   raw: string;
   /** 解析错误信息（解析失败时填充） */
   error?: string;
+  /** 复数函数模式：表达式含虚数单位 j，z = x + jy（水平面 Re/Im(z)，纵轴 |f(z)|） */
+  isComplex?: boolean;
+  /** 纯常数复数表达式（无变量，如 e^(j*pi)+1）——白板直接显示计算结果 */
+  isConstExpr?: boolean;
+  /** 复数模式下的复变量名（默认 z；宽容处理时可为 ω/theta 等任意单变量） */
+  complexVar?: string;
+  /** 复值函数螺旋线：实变量 t 扫过、输出为复值（如 e^(j*omega)）→ 3D 曲线 (t, Re f, Im f) */
+  isSpiral?: boolean;
 }
 
 // ── LaTeX → mathjs 基础转换 ──
@@ -176,13 +188,53 @@ export function latexToMathjs(latex: string): string {
 
 // ── 变量检测 ──
 // 扫描表达式中出现的标识符，排除 mathjs 内置函数/常量，识别自由变量
+// 支持单字母（x/y/z）与多字符小写变量名（如希腊字母映射后的 omega、theta）
 function detectVars(expr: string): string[] {
   const tokens = expr.match(/[a-zA-Z][a-zA-Z0-9]*/g) || [];
   const vars = new Set<string>();
   for (const t of tokens) {
-    if (!BUILTIN.has(t) && /^[a-z]$/.test(t)) vars.add(t);
+    if (!BUILTIN.has(t) && /^[a-z][a-z0-9]*$/.test(t)) vars.add(t);
   }
   return [...vars];
+}
+
+// ── 希腊字母 → ASCII 变量名（用户可能直接输入 ω/π/θ 等，mathjs 只认 ASCII）──
+// π→pi、τ→tau 是 mathjs 内置常量；其余映射为拉丁变量名；替换时自动补隐式乘法（jω → j*omega）
+const GREEK_MAP: Record<string, string> = {
+  α: 'alpha', β: 'beta', γ: 'gamma', δ: 'delta', ε: 'epsilon', ζ: 'zeta',
+  η: 'eta', θ: 'theta', ι: 'iota', κ: 'kappa', λ: 'lambda', μ: 'mu',
+  ν: 'nu', ξ: 'xi', ο: 'omicron', π: 'pi', ρ: 'rho', σ: 'sigma',
+  τ: 'tau', υ: 'upsilon', φ: 'phi', χ: 'chi', ψ: 'psi', ω: 'omega',
+  Α: 'alpha', Β: 'beta', Γ: 'gamma', Δ: 'delta', Ε: 'epsilon', Ζ: 'zeta',
+  Η: 'eta', Θ: 'theta', Ι: 'iota', Κ: 'kappa', Λ: 'lambda', Μ: 'mu',
+  Ν: 'nu', Ξ: 'xi', Ο: 'omicron', Π: 'pi', Ρ: 'rho', Σ: 'sigma',
+  Τ: 'tau', Υ: 'upsilon', Φ: 'phi', Χ: 'chi', Ψ: 'psi', Ω: 'omega',
+};
+
+export function normalizeGreek(s: string): string {
+  let out = '';
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    const lat = GREEK_MAP[c];
+    if (lat) {
+      const prev = out[out.length - 1];
+      // 前面紧邻字母/数字/右括号 → 补 *（隐式乘法：jω → j*omega、2π → 2*pi）
+      const needMul = prev !== undefined && /[a-zA-Z0-9)]/.test(prev);
+      out += needMul ? '*' + lat : lat;
+    } else {
+      out += c;
+    }
+  }
+  return out;
+}
+
+/** 希腊字母 → 显示名（轴标签等展示用） */
+export function displayVar(name: string): string {
+  const INV: Record<string, string> = {
+    omega: 'ω', theta: 'θ', phi: 'φ', alpha: 'α', beta: 'β', gamma: 'γ',
+    delta: 'δ', lambda: 'λ', sigma: 'σ', mu: 'μ', epsilon: 'ε', tau: 'τ', pi: 'π',
+  };
+  return INV[name] || name;
 }
 
 // ── 输入规范化：用户可能输入 y=x^2、z=x^2+y^2、x^2、sin(x)、cube 等 ──
@@ -213,7 +265,8 @@ function fixImplicitMul(s: string): string {
     // 数字/右括号 后面紧跟 字母或左括号 → 补 *
     const needMul =
       (/\d|\)/.test(c) && /[a-zA-Z(]/.test(next)) ||
-      (/\d/.test(c) && next === 'x');
+      (/\d/.test(c) && next === 'x') ||
+      (/\d/.test(c) && next === 'j'); // 2j → 2*j（复数模式）
     // 排除 函数名内部（sin( 已是合法）
     if (needMul) out += '*';
   }
@@ -237,8 +290,8 @@ const SOLID_ALIASES: Record<string, SolidType> = {
   cylinder: 'cylinder', 圆柱体: 'cylinder', 圆柱: 'cylinder',
 };
 
-/** 主入口：解析用户输入 → 判定图形类型 */
-export function parseGraphInput(raw: string): ParsedGraph {
+/** 主入口：解析用户输入 → 判定图形类型（complexMode：显式「复数坐标」开关，勾选后才按复变函数处理） */
+export function parseGraphInput(raw: string, complexMode = false): ParsedGraph {
   const input = normalizeInput(raw);
   if (!input) return { kind: 'curve', expr: '', vars: [], raw, error: '请输入表达式或几何体名称' };
 
@@ -251,16 +304,43 @@ export function parseGraphInput(raw: string): ParsedGraph {
   // 2) 拆分等号
   const { body, left } = splitEquation(input);
 
-  // 3) LaTeX → mathjs（若含反斜杠则按 LaTeX 处理）
+  // 3) LaTeX → mathjs（若含反斜杠则按 LaTeX 处理）；希腊字母 → ASCII 变量名（ω→omega、π→pi）
   let expr = body;
   if (/\\/.test(expr)) {
     expr = latexToMathjs(expr);
   }
-  expr = sanitize(fixImplicitMul(expr));
+  expr = normalizeGreek(sanitize(fixImplicitMul(expr)));
 
   if (!expr) return { kind: 'curve', expr: '', vars: [], raw, error: '未解析到有效表达式' };
 
-  // 4) 判定类型：左值含 z 或表达式变量含 ≥2 个 → 曲面；否则一元曲线
+  // 4) 复数坐标模式（显式开关，不做任何自动判别——i/j 在其他学科可能是电流/下标/普通变量）：
+  //    · 无变量：常数复数（如 e^(j*pi)+1）→ 直接显示计算结果
+  //    · x/y 两变量：x/y 作为实/虚部（如 x + j*y、x^2+y^2）→ |f(z)| 曲面
+  //    · 单变量 z：复变函数（z = x + jy）→ |f(z)| 曲面（色相=相位）
+  //    · 单变量非 z 且含 i/j（如 e^(j*omega)）：实变量→复值输出 → 3D 螺旋线 (t, Re f, Im f)
+  //    · 单变量非 z 无 i/j（如 sin(omega)）：宽容按复变曲面（变量当 z）
+  if (complexMode) {
+    const cVars = detectVars(expr).filter(v => v !== 'i' && v !== 'j');
+    const hasImagUnit = /(?<![a-zA-Z0-9])(?:i|j)(?![a-zA-Z0-9])/.test(expr);
+    if (cVars.length === 0) {
+      return { kind: 'surface', expr, vars: [], isComplex: true, isConstExpr: true, raw: input };
+    }
+    if (cVars.length === 2 && cVars.includes('x') && cVars.includes('y')) {
+      return { kind: 'surface', expr, vars: ['x', 'y'], isComplex: true, raw: input };
+    }
+    if (cVars.length === 1 && cVars[0] === 'z') {
+      return { kind: 'surface', expr, vars: ['z'], isComplex: true, raw: input };
+    }
+    if (cVars.length === 1 && hasImagUnit) {
+      return { kind: 'surface', expr, vars: [cVars[0]], isComplex: true, isSpiral: true, complexVar: cVars[0], raw: input };
+    }
+    if (cVars.length === 1) {
+      return { kind: 'surface', expr, vars: [cVars[0]], isComplex: true, complexVar: cVars[0], raw: input };
+    }
+    return { kind: 'curve', expr, vars: cVars, raw: input, error: '复数坐标模式请用 z（复变量）、x/y（实/虚部）或单变量（如 e^(j*omega) 螺旋线），如 e^z、sin(z)、x + j*y、e^(j*pi)+1' };
+  }
+
+  // 5) 判定类型：左值含 z 或表达式变量含 ≥2 个 → 曲面；否则一元曲线
   const leftLower = left.toLowerCase();
   const vars = detectVars(expr);
   // 若左侧明确为 z = → 曲面；否则看自由变量个数
@@ -411,6 +491,84 @@ export function compileExpr(expr: string): ((scope: Record<string, number>) => n
   } catch {
     return null;
   }
+}
+
+// ── 复数求值（复数函数模式）：w = f(z)，z = x + jy ──
+// mathjs 原生支持复数（create(all) 内置 Complex / 虚数单位 i、j），这里封装复数编译与求值
+export interface ComplexVal { re: number; im: number; }
+
+/** 编译复数表达式（复数坐标模式），返回 (zRe, zIm) => { re, im } | null
+ *  scope：z = x + jy（复变量），同时提供 x/y 实数（实/虚部），支持 e^z、sin(z)、x + j*y 等写法 */
+export function compileComplexExpr(expr: string): ((zRe: number, zIm: number) => ComplexVal | null) | null {
+  try {
+    const node = math.compile(expr);
+    return (zRe, zIm) => {
+      try {
+        const v = node.evaluate({ z: math.complex(zRe, zIm), x: zRe, y: zIm } as Record<string, unknown>);
+        return toComplexVal(v);
+      } catch {
+        return null;
+      }
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** 编译复值函数（螺旋线）：实变量 t → 复值 w（如 e^(j*omega)），返回 t => { re, im } | null */
+export function compileComplexValued(expr: string, varName: string): ((t: number) => ComplexVal | null) | null {
+  try {
+    const node = math.compile(expr);
+    return (t) => {
+      try {
+        const scope: Record<string, unknown> = { x: t, y: 0 };
+        scope[varName] = t;
+        const v = node.evaluate(scope);
+        return toComplexVal(v);
+      } catch {
+        return null;
+      }
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** 编译并求值无变量的常数复数表达式（如 e^(j*pi)+1） */
+export function compileConstComplex(expr: string): ComplexVal | null {
+  try {
+    const node = math.compile(expr);
+    const v = node.evaluate({});
+    return toComplexVal(v);
+  } catch {
+    return null;
+  }
+}
+
+function toComplexVal(v: unknown): ComplexVal | null {
+  if (typeof v === 'number') return { re: v, im: 0 };
+  if (v && typeof v === 'object' && 're' in v && 'im' in v) {
+    const re = (v as { re: unknown }).re, im = (v as { im: unknown }).im;
+    if (typeof re === 'number' && typeof im === 'number') return { re, im };
+  }
+  return null;
+}
+
+/** 复数格式化：0 / 纯实数 / 纯虚数 / 一般（如 -1、2j、-1+2j） */
+export function formatComplex(v: ComplexVal): string {
+  const { re, im } = v;
+  if (!isFinite(re) || !isFinite(im)) return '∞（不收敛）';
+  const fmt = (n: number): string => {
+    const a = Math.abs(n);
+    if (a < 1e-9) return '0';
+    if (Math.abs(n - Math.round(n)) < 1e-9) return String(Math.round(n));
+    return n.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
+  };
+  if (Math.abs(re) < 1e-9 && Math.abs(im) < 1e-9) return '0';
+  if (Math.abs(im) < 1e-9) return fmt(re);
+  const imPart = `${im < 0 ? '-' : '+'}${fmt(Math.abs(im))}j`;
+  if (Math.abs(re) < 1e-9) return imPart[0] === '+' ? imPart.slice(1) : imPart;
+  return `${fmt(re)}${imPart}`;
 }
 
 // ── 2D 曲线采样 ──

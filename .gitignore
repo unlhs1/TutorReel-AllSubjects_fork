@@ -50,3 +50,8 @@ test-out2/
 test-axisdrag.cjs
 test-gizmo-entity.cjs
 shot-axis.mjs
+test-surface-fns.cjs
+test-out3/
+test-complex.cjs
+test-out4/
+test-latex-check.cjs

@@ -3,7 +3,7 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
-import { parseGraphInput, ParsedGraph } from '../../services/math3dParser';
+import { parseGraphInput, ParsedGraph, compileConstComplex, formatComplex } from '../../services/math3dParser';
 import { Graph2D } from './Graph2D';
 import { Graph3D } from './Graph3D';
 import { HandwritingPad } from './HandwritingPad';
@@ -29,7 +29,10 @@ const EXAMPLES: Array<{ label: string; value: string }> = [
 // KaTeX 渲染（安全：katex 自带转义）
 function renderLatex(latex: string): string {
   try {
-    return katex.renderToString(latex, {
+    // KaTeX 的 ^ 后跟括号会把括号显示在上标里（e^(jω) → e 的上标显示为 (jω)）——
+    // 数学上括号只是分组符，转换为花括号组（e^{jω}）让上标不显示括号
+    const fixed = latex.replace(/\^\(([^()]*)\)/g, '^{$1}');
+    return katex.renderToString(fixed, {
       throwOnError: false,
       displayMode: true,
       strict: false,
@@ -44,6 +47,7 @@ export const Math3DStudio: React.FC = () => {
   const [mode, setMode] = useState<StudioMode>('graph');
   const [input, setInput] = useState('y = x^2');
   const [graph, setGraph] = useState<ParsedGraph>(() => parseGraphInput('y = x^2'));
+  const [complexMode, setComplexMode] = useState(false);
   const [dim, setDim] = useState<Dim>('3d');
   const [showPad, setShowPad] = useState(false);
   const [recognizing, setRecognizing] = useState(false);
@@ -57,15 +61,32 @@ export const Math3DStudio: React.FC = () => {
     return renderLatex(raw);
   }, [graph]);
 
-  const applyInput = useCallback((val: string) => {
+  // 复数坐标模式下：无变量表达式（如 e^(j*pi)+1）直接算结果展示
+  const constResult = useMemo(() => {
+    if (!graph.isConstExpr) return null;
+    const v = compileConstComplex(graph.expr);
+    return v ? formatComplex(v) : '无法计算';
+  }, [graph]);
+
+  const applyInput = useCallback((val: string, complex = complexMode) => {
     setInput(val);
-    const parsed = parseGraphInput(val);
+    const parsed = parseGraphInput(val, complex);
     setGraph(parsed);
     if (parsed.error) setError(parsed.error);
     else setError('');
     // 曲面 / 几何体自动切到 3D；曲线默认 2D（可手动切 3D）
     setDim(parsed.kind === 'curve' ? '2d' : '3d');
-  }, []);
+  }, [complexMode]);
+
+  const toggleComplex = useCallback((on: boolean) => {
+    setComplexMode(on);
+    // 勾选状态变化时用当前输入重新解析
+    const parsed = parseGraphInput(input, on);
+    setGraph(parsed);
+    if (parsed.error) setError(parsed.error);
+    else setError('');
+    setDim(parsed.kind === 'curve' ? '2d' : '3d');
+  }, [input]);
 
   const handleHandwritingResult = useCallback((dataUrl: string) => {
     setRecognizing(true);
@@ -167,15 +188,25 @@ export const Math3DStudio: React.FC = () => {
           <div className="flex items-center gap-2">
             <input
               value={input}
-              onChange={e => { setInput(e.target.value); const p = parseGraphInput(e.target.value); setGraph(p); if (p.error) setError(p.error); else setError(''); }}
+              onChange={e => { setInput(e.target.value); const p = parseGraphInput(e.target.value, complexMode); setGraph(p); if (p.error) setError(p.error); else setError(''); }}
               onKeyDown={e => { if (e.key === 'Enter') applyInput(input); }}
-              placeholder="输入公式，如 y = x^2、z = x^2 + y^2、cube、sphere、cylinder"
+              placeholder={complexMode
+                ? '复数坐标：e^z、sin(z)、x + j*y、e^(j*pi)+1'
+                : '输入公式，如 y = x^2、z = x^2 + y^2、cube、sphere、cylinder'}
               className="flex-1 px-3 py-2 rounded-lg bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-cyan-500"
             />
             <button onClick={() => applyInput(input)}
               className="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-sm font-semibold">
               生成
             </button>
+            {/* 复数坐标开关：显式声明复变函数模式（水平面 Re/Im(z)，纵轴 |f(z)|，色相=相位），不做自动判别 */}
+            <label className={`flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-xs font-medium border cursor-pointer select-none transition-colors ${complexMode
+              ? 'bg-fuchsia-600 border-fuchsia-600 text-white'
+              : 'bg-white dark:bg-zinc-800 border-gray-200 dark:border-zinc-700 text-gray-500 dark:text-zinc-400 hover:border-fuchsia-400'}`}
+              title="勾选后按复变函数渲染：z = x + jy，纵轴为 |f(z)|，曲面颜色表示相位 arg f(z)">
+              <input type="checkbox" checked={complexMode} onChange={e => toggleComplex(e.target.checked)} className="accent-fuchsia-500" />
+              复数坐标
+            </label>
             <button onClick={() => setShowPad(v => !v)}
               className={`px-4 py-2 rounded-lg text-sm font-semibold border transition-colors ${showPad ? 'bg-amber-500 border-amber-500 text-white' : 'bg-white dark:bg-zinc-800 border-gray-200 dark:border-zinc-700 text-gray-600 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-700'}`}>
               手写识别
@@ -186,6 +217,13 @@ export const Math3DStudio: React.FC = () => {
           {latexPreview && (
             <div className="flex items-center gap-3 min-h-[40px] px-3 py-1.5 rounded-lg bg-gray-50 dark:bg-zinc-800/60 border border-dashed border-gray-200 dark:border-zinc-700"
               dangerouslySetInnerHTML={{ __html: latexPreview }} />
+          )}
+          {/* 复数常数结果（如 e^(j*pi)+1 = 0） */}
+          {graph.isConstExpr && constResult && (
+            <div className="flex items-center gap-3 px-3 py-1.5 rounded-lg bg-fuchsia-50 dark:bg-fuchsia-950/30 border border-fuchsia-200 dark:border-fuchsia-900">
+              <span className="text-xs font-medium text-fuchsia-600 dark:text-fuchsia-400">复数结果</span>
+              <span className="text-sm font-mono text-fuchsia-800 dark:text-fuchsia-200">{graph.raw} = {constResult}</span>
+            </div>
           )}
           {error && <p className="text-sm text-red-500">{error}</p>}
 
@@ -222,7 +260,9 @@ export const Math3DStudio: React.FC = () => {
         <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-zinc-800 overflow-hidden">
           <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 dark:border-zinc-800">
             <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-zinc-300">
-              <span className="text-xs font-medium text-gray-400 dark:text-zinc-500">{graph.kind === 'solid' ? `几何体：${graph.solid}` : graph.kind === 'surface' ? '二元函数曲面' : '一元函数曲线'}</span>
+              <span className="text-xs font-medium text-gray-400 dark:text-zinc-500">
+                {graph.isConstExpr ? '复数常数' : graph.isSpiral ? '复值函数螺旋线' : graph.isComplex ? '复数函数曲面' : graph.kind === 'solid' ? `几何体：${graph.solid}` : graph.kind === 'surface' ? '二元函数曲面' : '一元函数曲线'}
+              </span>
               <span className="text-xs font-mono text-cyan-600 dark:text-cyan-400">{graph.expr}</span>
             </div>
             {/* 范围调节（仅函数类） */}
