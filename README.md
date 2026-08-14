@@ -32,13 +32,21 @@
 
 ## 快速开始
 
+> 详细部署文档见仓库根目录的 [`部署方法.txt`](./部署方法.txt)——写给任何 AI Agent 或开发者，按顺序照做即可完成部署、启动、验证。
+
 ### 前置要求
 
-- Node.js 18+
+- Node.js 20+（推荐 20.19+）
+- Microsoft Edge 浏览器（Remotion 渲染视频帧需要）
+- 两个 API Key：DeepSeek（必需）、DashScope 通义千问（OCR 识别 + TTS 兜底，建议填）
 
 ### 安装与运行（开发模式）
 
 ```bash
+# 获取代码
+git clone https://github.com/unlhs1/TutorReel-AllSubjects_fork.git
+cd TutorReel-AllSubjects_fork
+
 # 安装依赖
 npm install
 
