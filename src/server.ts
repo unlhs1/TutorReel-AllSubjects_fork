@@ -268,14 +268,15 @@ const OCR_MATH_PROMPT = `你是一个数学公式识别助手。识别图片中�
 {
   "latex": "公式的 LaTeX 形式，如 y = \\frac{x^2}{2} 或 z = x^2 + y^2",
   "expr": "用 mathjs 语法表示的同一条公式的可求值表达式（去掉 y= / z= 前缀，只保留右侧，变量用 x/y/z），如 (x^2)/2 或 x^2 + y^2",
-  "kind": "curve 或 surface"
+  "kind": "curve 或 surface 或 system"
 }
 要求：
 1. latex：完整 LaTeX，等号可保留。
 2. expr（关键）：必须是 mathjs 可直接 evaluate 的表达式——幂用 ^、分式用括号 /、函数用 sin(x)/cos(x)/sqrt(x)/log(x)/abs(x) 等、乘法用 *、只保留等式右侧的纯函数体。若公式含多个变量（如 x 和 y）则 kind=surface，expr 同时含 x 和 y。
 3. kind：只有一个自变量（通常是 x）→ curve；含两个变量（x,y 或 y,z）→ surface。
 4. 如果是普通数字/简单运算，也按 curve 处理。
-5. 无法识别时输出 {"latex":"","expr":"","kind":"curve"}。`;
+5. 无法识别时输出 {"latex":"","expr":"","kind":"curve"}。
+6. 如果是方程组（多个等式，用逗号、分号或花括号分隔，如 y=x^3 和 y=1+x^2 并列）：kind=system，latex 保留完整的等式组（如 y=x^3, y=1+x^2），expr 用逗号分隔多个等式的右侧（如 x^3, 1+x^2），每个右侧都是 mathjs 可求值表达式。`;
 
 app.post('/api/ocr-math', async (req, res) => {
   try {
@@ -310,7 +311,7 @@ app.post('/api/ocr-math', async (req, res) => {
     const parsed = parseLLMJson(content);
     const latex = typeof parsed.latex === 'string' ? parsed.latex : '';
     const expr = typeof parsed.expr === 'string' ? parsed.expr : '';
-    const kind = parsed.kind === 'surface' ? 'surface' : 'curve';
+    const kind = parsed.kind === 'surface' ? 'surface' : parsed.kind === 'system' ? 'system' : 'curve';
     console.log(`[ocr-math] latex=${latex.slice(0, 60)} expr=${expr.slice(0, 60)} kind=${kind}`);
     res.json({ latex, expr, kind });
   } catch (error) {

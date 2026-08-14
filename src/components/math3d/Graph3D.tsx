@@ -575,12 +575,15 @@ export const Graph3D: React.FC<Props> = ({ graph, isDark = true, range = 2.5, sh
   const [cutTilt, setCutTilt] = useState(0);
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number; z: number; fval: number | null } | null>(null);
 
-  const mode = graph.kind === 'surface' ? 'surface'
-    : graph.kind === 'solid' ? 'solid'
-    : 'curve3d';
+  const mode = graph.kind === 'system'
+    ? (graph.subgraphs?.every(s => s.kind === 'surface') ? 'surface' : 'curve3d')
+    : graph.kind === 'surface' ? 'surface'
+      : graph.kind === 'solid' ? 'solid'
+        : 'curve3d';
 
-  // 悬浮坐标函数值计算：曲面 z=f(x,y)（复数坐标：|f(z)|），曲线 y=f(x)；螺旋线无高度值
+  // 悬浮坐标函数值计算：曲面 z=f(x,y)（复数坐标：|f(z)|），曲线 y=f(x)；螺旋线/方程组无高度值
   const hoverEval = useMemo(() => {
+    if (graph.kind === 'system' || graph.kind === 'solid') return null;
     if (graph.kind === 'surface' && !graph.isSpiral) {
       if (graph.isComplex) {
         const f = compileComplexExpr(graph.expr);
@@ -613,7 +616,22 @@ export const Graph3D: React.FC<Props> = ({ graph, isDark = true, range = 2.5, sh
         <directionalLight position={[6, 8, 4]} intensity={1.1} />
         <directionalLight position={[-4, -2, -3]} intensity={0.35} color={isDark ? '#3b82f6' : '#ffffff'} />
 
-        {graph.kind === 'surface' && (graph.isSpiral
+        {graph.kind === 'system' ? (
+          /* 方程组：多个子图叠加（全曲线 → 空间曲线组；全曲面 → 曲面组） */
+          (graph.subgraphs || []).map((sg, i) => {
+            if (sg.kind === 'surface') {
+              return sg.isSpiral
+                ? <SpiralCurve key={i} expr={sg.expr} varName={sg.complexVar || sg.vars[0] || 't'} baseRange={range * 2} />
+                : sg.isComplex
+                  ? <ComplexSurfaceMesh key={i} expr={sg.expr} range={range} />
+                  : <SurfaceMesh key={i} expr={sg.expr} range={range} isDark={isDark} />;
+            }
+            if (sg.kind === 'curve') {
+              return <SpaceCurve key={i} expr={sg.expr} variable={sg.vars[0] || 'x'} baseRange={range * 2} />;
+            }
+            return null;
+          })
+        ) : graph.kind === 'surface' && (graph.isSpiral
           ? <SpiralCurve expr={graph.expr} varName={graph.complexVar || graph.vars[0] || 't'} baseRange={range * 2} />
           : graph.isComplex
             ? <ComplexSurfaceMesh expr={graph.expr} range={range} />

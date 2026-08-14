@@ -20,7 +20,7 @@ const BUILTIN = new Set([
   'im', 're', 'conj', 'arg', 'sec', 'csc', 'cot', 'i', 'j',
 ]);
 
-export type GraphKind = 'curve' | 'surface' | 'solid';
+export type GraphKind = 'curve' | 'surface' | 'solid' | 'system';
 export type SolidType = 'cube' | 'sphere' | 'cylinder';
 
 export interface ParsedGraph {
@@ -43,6 +43,8 @@ export interface ParsedGraph {
   complexVar?: string;
   /** 复值函数螺旋线：实变量 t 扫过、输出为复值（如 e^(j*omega)）→ 3D 曲线 (t, Re f, Im f) */
   isSpiral?: boolean;
+  /** 方程组：子图列表（全部 curve → 2D 交点，或全部 surface → 3D 叠加） */
+  subgraphs?: ParsedGraph[];
 }
 
 // ── LaTeX → mathjs 基础转换 ──
@@ -290,10 +292,46 @@ const SOLID_ALIASES: Record<string, SolidType> = {
   cylinder: 'cylinder', 圆柱体: 'cylinder', 圆柱: 'cylinder',
 };
 
+// ── 方程组拆分：按顶层 , 或 ; 分隔（跳过括号内的逗号），花括号整体剥离 ──
+// 支持：{y = x^2, y = x}、y = x^2; y = x、z = x^2 + y^2, z = 1
+export function splitSystem(raw: string): string[] {
+  let s = raw.trim();
+  if (s.startsWith('{') && s.endsWith('}')) s = s.slice(1, -1).trim();
+  const segs: string[] = [];
+  let depth = 0, cur = '';
+  for (const c of s) {
+    if (c === '(' || c === '{' || c === '[') depth++;
+    else if (c === ')' || c === '}' || c === ']') depth--;
+    if ((c === ',' || c === ';') && depth === 0) {
+      if (cur.trim()) segs.push(cur.trim());
+      cur = '';
+    } else {
+      cur += c;
+    }
+  }
+  if (cur.trim()) segs.push(cur.trim());
+  return segs;
+}
+
 /** 主入口：解析用户输入 → 判定图形类型（complexMode：显式「复数坐标」开关，勾选后才按复变函数处理） */
 export function parseGraphInput(raw: string, complexMode = false): ParsedGraph {
   const input = normalizeInput(raw);
   if (!input) return { kind: 'curve', expr: '', vars: [], raw, error: '请输入表达式或几何体名称' };
+
+  // 0) 方程组：顶层 , 或 ; 分隔出多个方程 → 每个单独解析，类型需一致
+  const systemSegs = splitSystem(input);
+  if (systemSegs.length >= 2) {
+    const subs = systemSegs.map(s => parseGraphInput(s, complexMode));
+    const bad = subs.find(g => g.error);
+    if (bad) {
+      return { kind: 'system', expr: '', vars: [], subgraphs: subs, raw: input, error: `第 ${subs.indexOf(bad) + 1} 个方程：${bad.error}` };
+    }
+    const kinds = new Set(subs.map(s => s.kind));
+    if (kinds.size > 1 || kinds.has('solid')) {
+      return { kind: 'system', expr: '', vars: [], subgraphs: subs, raw: input, error: '方程组需同类型：全为 y=f(x) 曲线（2D 求交点）或全为 z=f(x,y) 曲面（3D 叠加）' };
+    }
+    return { kind: 'system', expr: '', vars: [], subgraphs: subs, raw: input };
+  }
 
   // 1) 几何体命令（优先）：直接命中
   const solidKey = input.toLowerCase().replace(/^生成|画|显示|创建/, '');
@@ -569,6 +607,48 @@ export function formatComplex(v: ComplexVal): string {
   const imPart = `${im < 0 ? '-' : '+'}${fmt(Math.abs(im))}j`;
   if (Math.abs(re) < 1e-9) return imPart[0] === '+' ? imPart.slice(1) : imPart;
   return `${fmt(re)}${imPart}`;
+}
+
+// ── 2D 曲线交点：逐段扫描符号变化 + 二分精化（方程组求解可视化） ──
+export function findCurveIntersections(
+  f: (x: number) => number | null,
+  g: (x: number) => number | null,
+  x0: number,
+  x1: number,
+  samples = 600,
+): Array<{ x: number; y: number }> {
+  const out: Array<{ x: number; y: number }> = [];
+  let prevX = x0;
+  let prevD = NaN;
+  for (let i = 1; i <= samples; i++) {
+    const x = x0 + ((x1 - x0) * i) / samples;
+    const yf = f(x), yg = g(x);
+    if (yf === null || yg === null || !isFinite(yf) || !isFinite(yg)) { prevD = NaN; continue; }
+    const d = yf - yg;
+    if (isFinite(prevD) && prevD * d < 0) {
+      // 二分精化
+      let lo = prevX, hi = x;
+      let flo = prevD;
+      for (let k = 0; k < 40; k++) {
+        const mid = (lo + hi) / 2;
+        const yfm = f(mid), ygm = g(mid);
+        if (yfm === null || ygm === null || !isFinite(yfm) || !isFinite(ygm)) break;
+        const dm = yfm - ygm;
+        if (dm === 0) { lo = hi = mid; break; }
+        if (flo * dm < 0) hi = mid;
+        else { lo = mid; flo = dm; }
+      }
+      const xm = (lo + hi) / 2;
+      const ym = f(xm);
+      if (ym !== null && isFinite(ym) && Math.abs(ym) < 1e6) out.push({ x: xm, y: ym });
+    } else if (d === 0) {
+      // 采样点恰好落在交点上（prevD*d=0 会吞掉符号变化，这里直接记录）
+      out.push({ x, y: yf });
+    }
+    prevX = x;
+    prevD = d;
+  }
+  return out;
 }
 
 // ── 2D 曲线采样 ──

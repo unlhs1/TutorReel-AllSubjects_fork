@@ -74,8 +74,9 @@ export const Math3DStudio: React.FC = () => {
     setGraph(parsed);
     if (parsed.error) setError(parsed.error);
     else setError('');
-    // 曲面 / 几何体自动切到 3D；曲线默认 2D（可手动切 3D）
-    setDim(parsed.kind === 'curve' ? '2d' : '3d');
+    // 曲面 / 几何体自动切到 3D；曲线默认 2D（可手动切 3D）；方程组按子图类型
+    const sysCurve = parsed.kind === 'system' && parsed.subgraphs?.every(s => s.kind === 'curve');
+    setDim(parsed.kind === 'curve' || sysCurve ? '2d' : '3d');
   }, [complexMode]);
 
   const toggleComplex = useCallback((on: boolean) => {
@@ -85,7 +86,8 @@ export const Math3DStudio: React.FC = () => {
     setGraph(parsed);
     if (parsed.error) setError(parsed.error);
     else setError('');
-    setDim(parsed.kind === 'curve' ? '2d' : '3d');
+    const sysCurve = parsed.kind === 'system' && parsed.subgraphs?.every(s => s.kind === 'curve');
+    setDim(parsed.kind === 'curve' || sysCurve ? '2d' : '3d');
   }, [input]);
 
   const handleHandwritingResult = useCallback((dataUrl: string) => {
@@ -111,7 +113,9 @@ export const Math3DStudio: React.FC = () => {
         setRecogResult(result);
         // 有 expr 就直接用；否则用 latex 走解析器
         if (result.expr.trim()) {
-          const exprValue = result.kind === 'surface' ? `z = ${result.expr}` : `y = ${result.expr}`;
+          // 方程组：用完整 latex（y=x^3, y=1+x^2）走方程组解析；曲面补 z=；曲线补 y=
+          const exprValue = result.kind === 'system' ? (result.latex || result.expr)
+            : result.kind === 'surface' ? `z = ${result.expr}` : `y = ${result.expr}`;
           applyInput(exprValue);
         } else if (result.latex.trim()) {
           applyInput(result.latex);
@@ -123,7 +127,9 @@ export const Math3DStudio: React.FC = () => {
       .finally(() => setRecognizing(false));
   }, [applyInput]);
 
-  const dimDisabled = graph.kind === 'solid' || graph.kind === 'surface';
+  // 2D 按钮禁用条件：曲面/几何体不可 2D 显示；方程组含曲面（非全曲线）同样固定 3D
+  const dimDisabled = graph.kind === 'solid' || graph.kind === 'surface'
+    || (graph.kind === 'system' && !graph.subgraphs?.every(s => s.kind === 'curve'));
 
   return (
     <div className="p-6 h-[calc(100vh-4rem)] overflow-y-auto">
@@ -261,7 +267,9 @@ export const Math3DStudio: React.FC = () => {
           <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 dark:border-zinc-800">
             <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-zinc-300">
               <span className="text-xs font-medium text-gray-400 dark:text-zinc-500">
-                {graph.isConstExpr ? '复数常数' : graph.isSpiral ? '复值函数螺旋线' : graph.isComplex ? '复数函数曲面' : graph.kind === 'solid' ? `几何体：${graph.solid}` : graph.kind === 'surface' ? '二元函数曲面' : '一元函数曲线'}
+                {graph.kind === 'system'
+                  ? `方程组（${graph.subgraphs?.length ?? 0} 条${graph.subgraphs?.every(s => s.kind === 'curve') ? '曲线' : '曲面'}）`
+                  : graph.isConstExpr ? '复数常数' : graph.isSpiral ? '复值函数螺旋线' : graph.isComplex ? '复数函数曲面' : graph.kind === 'solid' ? `几何体：${graph.solid}` : graph.kind === 'surface' ? '二元函数曲面' : '一元函数曲线'}
               </span>
               <span className="text-xs font-mono text-cyan-600 dark:text-cyan-400">{graph.expr}</span>
             </div>
@@ -276,7 +284,8 @@ export const Math3DStudio: React.FC = () => {
             )}
           </div>
           <div className="relative w-full h-[480px] bg-zinc-50 dark:bg-zinc-950">
-            {graph.kind === 'curve' && dim === '2d' ? (
+            {((graph.kind === 'curve' && dim === '2d') ||
+              (graph.kind === 'system' && graph.subgraphs?.every(s => s.kind === 'curve') && dim === '2d')) ? (
               <Graph2D graph={graph} isDark={isDark} range={range} />
             ) : (
               <Graph3D graph={graph} isDark={isDark} range={range} />

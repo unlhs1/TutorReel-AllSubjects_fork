@@ -4,6 +4,11 @@ import React, { useMemo, useRef, useState, useCallback, useEffect } from 'react'
 import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls, Grid } from '@react-three/drei';
 import * as THREE from 'three';
+import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
+import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
+import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
+import { Line2 } from 'three/examples/jsm/lines/Line2.js';
+import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
 import {
   GeoPoint, GeoEntity, EntityKind,
   segmentIntersect3D, findZero, findExtrema, fmt,
@@ -44,6 +49,9 @@ interface Props {
 }
 
 const POINT_COLORS = ['#f472b6', '#22d3ee', '#a78bfa', '#4ade80', '#fbbf24', '#60a5fa', '#fb923c', '#e879f9'];
+
+// 实体换色色板（线/面/体共用）
+const ENTITY_COLORS = ['#38bdf8', '#ef4444', '#f472b6', '#a78bfa', '#4ade80', '#fbbf24', '#fb923c', '#60a5fa', '#22d3ee', '#f8fafc'];
 
 // 平面视图：返回法向量 + 把 raycast 命中点映射为 (x,y,z)
 function getPlaneInfo(mode: ViewMode): { normal: [number, number, number]; mapHit: (x: number, y: number, z: number) => [number, number, number] } {
@@ -131,6 +139,17 @@ export const GeoBoard: React.FC<Props> = ({ isDark = true }) => {
     if (entities.some(e => e.id === id)) return { kind: 'entity', id };
     return null;
   }, [selected, points, entities, viewMode, hidden]);
+
+  // ── 实体换色：选中实体时色板改 entity.color（线/面/体渲染读它） ──
+  const hasEntitySelected = selected.some(id => entities.some(e => e.id === id));
+  const selEntityColor = useMemo(() => {
+    const e = entities.find(ent => selected.includes(ent.id));
+    return e?.color || '#38bdf8';
+  }, [entities, selected]);
+  const setEntityColor = useCallback((c: string) => {
+    setEntities(prev => prev.map(e => (selected.includes(e.id) ? { ...e, color: c } : e)));
+    setStatus(`已设置颜色 ${c}`);
+  }, [selected]);
 
   // ── 用选中点创建实体 ──
   const buildEntity = useCallback((kind: EntityKind) => {
@@ -231,9 +250,9 @@ export const GeoBoard: React.FC<Props> = ({ isDark = true }) => {
     entities.filter(e => !hidden.has(e.id)).map(e => (
       <EntityMesh key={e.id} entity={e} points={points} selected={selected.includes(e.id)}
         onSelect={() => toggleSelect(e.id)} getLive={getLive}
-        tool={tool} viewMode={viewMode} transformEntity={transformPoints} />
+        tool={tool} viewMode={viewMode} transformEntity={transformPoints} isDark={isDark} />
     )),
-  [entities, points, hidden, selected, toggleSelect, getLive, tool, viewMode, transformPoints]);
+  [entities, points, hidden, selected, toggleSelect, getLive, tool, viewMode, transformPoints, isDark]);
 
   // 颜色用原始索引：隐藏点后颜色不错位
   const renderPoints = useMemo(() =>
@@ -311,7 +330,18 @@ export const GeoBoard: React.FC<Props> = ({ isDark = true }) => {
             {vm === '3d' ? '3D' : `${vm[0]}${vm[1]} 平面`}
           </button>
         ))}
-        <span className="ml-auto text-[11px] text-gray-400 dark:text-zinc-500">{points.length} 点 · {entities.length} 实体 · 选中 {selected.length}</span>
+        {/* 实体换色：选中实体时显示色板（线/面/体通用） */}
+        {hasEntitySelected && (
+          <div className="flex items-center gap-1 ml-auto">
+            <span className="text-[11px] text-gray-400 dark:text-zinc-500">颜色</span>
+            {ENTITY_COLORS.map(c => (
+              <button key={c} onClick={() => setEntityColor(c)} title={`设为 ${c}`}
+                className={`w-4 h-4 rounded-full border border-black/20 dark:border-white/30 transition-transform hover:scale-110 ${selEntityColor === c ? 'ring-2 ring-cyan-400 ring-offset-1 dark:ring-offset-zinc-900' : ''}`}
+                style={{ background: c }} />
+            ))}
+          </div>
+        )}
+        <span className={`${hasEntitySelected ? '' : 'ml-auto'} text-[11px] text-gray-400 dark:text-zinc-500`}>{points.length} 点 · {entities.length} 实体 · 选中 {selected.length}</span>
       </div>
 
       {/* 特殊点函数输入条 */}
@@ -749,7 +779,7 @@ function solidPairs(n: number): Array<[number, number]> {
 
 // 实体 mesh：按类型分发到子组件（每个子组件 hooks 一致，避免"more hooks"错误）
 // 支持整体拖动：select 拖=平移，旋转工具拖=绕视图方向旋转，缩放工具拖=绕中心缩放
-function EntityMesh({ entity, points, selected, onSelect, getLive, tool, viewMode, transformEntity }: {
+function EntityMesh({ entity, points, selected, onSelect, getLive, tool, viewMode, transformEntity, isDark }: {
   entity: GeoEntity;
   points: GeoPoint[];
   selected: boolean;
@@ -758,6 +788,7 @@ function EntityMesh({ entity, points, selected, onSelect, getLive, tool, viewMod
   tool: Tool;
   viewMode: ViewMode;
   transformEntity: (ids: string[], fn: (p: GeoPoint) => GeoPoint) => void;
+  isDark?: boolean;
 }) {
   const pts = entity.pointIds.map(id => getPoint(points, id)).filter(Boolean) as GeoPoint[];
   // 按类型校验所需点数，防删除点后悬挂实体崩溃
@@ -940,7 +971,9 @@ function EntityMesh({ entity, points, selected, onSelect, getLive, tool, viewMod
   } else if (entity.kind === 'plane' || entity.kind === 'polygon' || entity.kind === 'circle') {
     child = <FaceEntity a={pts[0]} b={pts[1]} c={pts[2]} color={color} getLive={getLive} />;
   } else if (entity.kind === 'solid') {
-    child = <SolidEntity pts={pts} color={color} getLive={getLive} />;
+    // 棱线高亮：选中黄 / 平时白（深色）或深灰（浅色主题）
+    const edgeColor = selected ? '#fbbf24' : (isDark ? '#f8fafc' : '#1e293b');
+    child = <SolidEntity pts={pts} color={color} edgeColor={edgeColor} getLive={getLive} />;
   }
   if (!child) return null;
   return (
@@ -968,29 +1001,39 @@ function EntityMesh({ entity, points, selected, onSelect, getLive, tool, viewMod
 }
 
 // 线：拖动联动（getLive 读取被拖点实时坐标，原地更新 geometry）
+// 用 LineSegments2 + LineMaterial 真实线宽（WebGL 下 LineBasicMaterial.linewidth 恒为 1px，太细）
 function LineEntity({ a, b, isLine, color, getLive }: {
   a: GeoPoint; b: GeoPoint; isLine: boolean; color: string;
   getLive: (id: string) => { x: number; y: number; z: number } | undefined;
 }) {
-  const lineRef = useRef<THREE.Line>(null);
-  const { lineObj, cleanup } = useMemo(() => {
+  const { size } = useThree();
+  // 线材质：像素线宽 3（与体棱线/预置体一致），分辨率跟随画布尺寸
+  const mat = useMemo(() => new LineMaterial({
+    color,
+    linewidth: 3,
+    resolution: new THREE.Vector2(size.width, size.height),
+  }), [color]);
+  const geo = useMemo(() => {
     const extend = isLine ? 4 : 0;
     const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
     const len = Math.sqrt(dx**2 + dy**2 + dz**2) || 1;
     const ux = dx/len, uy = dy/len, uz = dz/len;
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute([
+    const g = new LineSegmentsGeometry();
+    g.setPositions(new Float32Array([
       a.x - ux*extend, a.y - uy*extend, a.z - uz*extend,
       b.x + ux*extend, b.y + uy*extend, b.z + uz*extend,
-    ], 3));
-    const mat = new THREE.LineBasicMaterial({ color });
-    return { lineObj: new THREE.Line(g, mat), cleanup: () => { g.dispose(); mat.dispose(); } };
-  }, [a, b, isLine, color]);
-  useEffect(() => cleanup, [cleanup]);
+    ]));
+    return g;
+  }, [a, b, isLine]);
+  const lineObj = useMemo(() => {
+    const o = new LineSegments2(geo, mat);
+    o.frustumCulled = false; // 拖动中 boundingSphere 频繁变化，关闭视锥裁剪防闪烁
+    return o;
+  }, [geo, mat]);
+  useEffect(() => () => { geo.dispose(); mat.dispose(); }, [geo, mat]);
+  useEffect(() => { mat.resolution.set(size.width, size.height); }, [mat, size]);
 
   useFrame(() => {
-    const obj = lineRef.current;
-    if (!obj) return;
     const pa = getLive(a.id), pb = getLive(b.id);
     if (!pa && !pb) return;
     const ax = pa ? pa.x : a.x, ay = pa ? pa.y : a.y, az = pa ? pa.z : a.z;
@@ -999,38 +1042,47 @@ function LineEntity({ a, b, isLine, color, getLive }: {
     const dx = bx - ax, dy = by - ay, dz = bz - az;
     const len = Math.sqrt(dx**2 + dy**2 + dz**2) || 1;
     const ux = dx/len, uy = dy/len, uz = dz/len;
-    const pos = obj.geometry.attributes.position as THREE.BufferAttribute;
-    pos.setXYZ(0, ax - ux*extend, ay - uy*extend, az - uz*extend);
-    pos.setXYZ(1, bx + ux*extend, by + uy*extend, bz + uz*extend);
-    pos.needsUpdate = true;
+    const st = geo.attributes.instanceStart as THREE.BufferAttribute;
+    const en = geo.attributes.instanceEnd as THREE.BufferAttribute;
+    st.setXYZ(0, ax - ux*extend, ay - uy*extend, az - uz*extend);
+    en.setXYZ(0, bx + ux*extend, by + uy*extend, bz + uz*extend);
+    st.needsUpdate = true;
+    en.needsUpdate = true;
   });
 
-  return (
-    <group>
-      <primitive ref={lineRef} object={lineObj} />
-    </group>
-  );
+  return <primitive object={lineObj} />;
 }
 
-// 面/多边形：半透明三角 + 描边
+// 面/多边形：半透明三角 + 描边（LineSegments2 真实线宽 3px，拖动实时联动）
 function FaceEntity({ a, b, c, color, getLive }: {
   a: GeoPoint; b: GeoPoint; c: GeoPoint; color: string;
   getLive: (id: string) => { x: number; y: number; z: number } | undefined;
 }) {
   const faceRef = useRef<THREE.Mesh>(null);
-  const edgeRef = useRef<THREE.Line>(null);
-  const { faceGeo, edgeObj, cleanup } = useMemo(() => {
+  const { size } = useThree();
+  const { faceGeo, edgeGeo, edgeMat, edgeObj, cleanup } = useMemo(() => {
     const fg = new THREE.BufferGeometry();
     fg.setAttribute('position', new THREE.BufferAttribute(new Float32Array([a.x,a.y,a.z, b.x,b.y,b.z, c.x,c.y,c.z]), 3));
     fg.computeVertexNormals();
     fg.computeBoundingSphere();
-    const eg = new THREE.BufferGeometry();
-    eg.setAttribute('position', new THREE.BufferAttribute(new Float32Array([a.x,a.y,a.z, b.x,b.y,b.z, c.x,c.y,c.z, a.x,a.y,a.z]), 3));
-    eg.computeBoundingSphere();
-    const em = new THREE.LineBasicMaterial({ color });
-    return { faceGeo: fg, edgeObj: new THREE.Line(eg, em), cleanup: () => { fg.dispose(); eg.dispose(); em.dispose(); } };
+    // 描边 = 闭合三角形三条边（a-b, b-c, c-a）
+    const eg = new LineSegmentsGeometry();
+    eg.setPositions(new Float32Array([
+      a.x,a.y,a.z, b.x,b.y,b.z,
+      b.x,b.y,b.z, c.x,c.y,c.z,
+      c.x,c.y,c.z, a.x,a.y,a.z,
+    ]));
+    const em = new LineMaterial({
+      color,
+      linewidth: 3,
+      resolution: new THREE.Vector2(size.width, size.height),
+    });
+    const eo = new LineSegments2(eg, em);
+    eo.frustumCulled = false; // 拖动中关闭视锥裁剪防闪烁
+    return { faceGeo: fg, edgeGeo: eg, edgeMat: em, edgeObj: eo, cleanup: () => { fg.dispose(); eg.dispose(); em.dispose(); } };
   }, [a, b, c, color]);
   useEffect(() => cleanup, [cleanup]);
+  useEffect(() => { edgeMat.resolution.set(size.width, size.height); }, [edgeMat, size]);
 
   useFrame(() => {
     const pa = getLive(a.id), pb = getLive(b.id), pc = getLive(c.id);
@@ -1044,11 +1096,13 @@ function FaceEntity({ a, b, c, color, getLive }: {
       pos.needsUpdate = true;
       faceRef.current.geometry.computeVertexNormals();
     }
-    if (edgeRef.current) {
-      const pos = edgeRef.current.geometry.attributes.position as THREE.BufferAttribute;
-      pos.setXYZ(0, ax, ay, az); pos.setXYZ(1, bx, by, bz); pos.setXYZ(2, cx, cy, cz); pos.setXYZ(3, ax, ay, az);
-      pos.needsUpdate = true;
-    }
+    const st = edgeGeo.attributes.instanceStart as THREE.BufferAttribute;
+    const en = edgeGeo.attributes.instanceEnd as THREE.BufferAttribute;
+    st.setXYZ(0, ax, ay, az); en.setXYZ(0, bx, by, bz);
+    st.setXYZ(1, bx, by, bz); en.setXYZ(1, cx, cy, cz);
+    st.setXYZ(2, cx, cy, cz); en.setXYZ(2, ax, ay, az);
+    st.needsUpdate = true;
+    en.needsUpdate = true;
   });
 
   return (
@@ -1056,30 +1110,45 @@ function FaceEntity({ a, b, c, color, getLive }: {
       <mesh ref={faceRef} geometry={faceGeo}>
         <meshBasicMaterial color={color} transparent opacity={0.35} side={THREE.DoubleSide} />
       </mesh>
-      <primitive ref={edgeRef} object={edgeObj} />
+      <primitive object={edgeObj} />
     </group>
   );
 }
 
-// 体：线框（LineSegments）+ 半透明三角面
-function SolidEntity({ pts, color, getLive }: {
-  pts: GeoPoint[]; color: string;
+// 体：高亮棱线（LineSegments2 真实线宽，白/黄）+ 半透明三角面 + 顶点球（棱线顶点亮色小球）
+function SolidEntity({ pts, color, edgeColor, getLive }: {
+  pts: GeoPoint[]; color: string; edgeColor: string;
   getLive: (id: string) => { x: number; y: number; z: number } | undefined;
 }) {
-  const edgesRef = useRef<THREE.LineSegments>(null);
+  const edgesRef = useRef<LineSegments2>(null);
   const facesRef = useRef<THREE.Mesh>(null);
+  const vertexRefs = useRef<Array<THREE.Mesh | null>>([]);
   const pointIds = useMemo(() => pts.map(p => p.id), [pts]);
-  const { edgesObj, facesGeo, cleanup } = useMemo(() => {
+  const { size } = useThree();
+  // 棱线材质：LineMaterial 支持真实线宽（像素单位）；分辨率跟随画布尺寸
+  const edgesMat = useMemo(() => new LineMaterial({
+    color: edgeColor,
+    linewidth: 3,
+    resolution: new THREE.Vector2(size.width, size.height),
+  }), [edgeColor]);
+  const edgesGeo = useMemo(() => {
     const pairs = solidPairs(pts.length);
-    const ePos = new Float32Array(pairs.length * 6);
+    const pos = new Float32Array(pairs.length * 6);
     pairs.forEach(([i, j], k) => {
       const o = k * 6;
-      ePos[o] = pts[i].x; ePos[o+1] = pts[i].y; ePos[o+2] = pts[i].z;
-      ePos[o+3] = pts[j].x; ePos[o+4] = pts[j].y; ePos[o+5] = pts[j].z;
+      pos[o] = pts[i].x; pos[o+1] = pts[i].y; pos[o+2] = pts[i].z;
+      pos[o+3] = pts[j].x; pos[o+4] = pts[j].y; pos[o+5] = pts[j].z;
     });
-    const eg = new THREE.BufferGeometry();
-    eg.setAttribute('position', new THREE.BufferAttribute(ePos, 3));
-    const em = new THREE.LineBasicMaterial({ color });
+    const g = new LineSegmentsGeometry();
+    g.setPositions(pos);
+    return g;
+  }, [pts]);
+  const edgesObj = useMemo(() => {
+    const obj = new LineSegments2(edgesGeo, edgesMat);
+    obj.frustumCulled = false; // 拖动中 boundingSphere 频繁变化，关闭视锥裁剪防闪烁
+    return obj;
+  }, [edgesGeo, edgesMat]);
+  const { facesGeo, cleanup } = useMemo(() => {
     const faceIdx = pts.length === 4 ? SOLID_FACES_4 : [];
     const fPos = new Float32Array(faceIdx.length * 9);
     faceIdx.forEach(([i, j, k], idx) => {
@@ -1091,9 +1160,17 @@ function SolidEntity({ pts, color, getLive }: {
     const fg = new THREE.BufferGeometry();
     fg.setAttribute('position', new THREE.BufferAttribute(fPos, 3));
     fg.computeVertexNormals();
-    return { edgesObj: new THREE.LineSegments(eg, em), facesGeo: fg, cleanup: () => { eg.dispose(); em.dispose(); fg.dispose(); } };
-  }, [pts, color]);
+    return { facesGeo: fg, cleanup: () => fg.dispose() };
+  }, [pts]);
   useEffect(() => cleanup, [cleanup]);
+  useEffect(() => () => { edgesGeo.dispose(); edgesMat.dispose(); }, [edgesGeo, edgesMat]);
+  // 分辨率跟随画布尺寸（窗口缩放后线宽不畸变）
+  useEffect(() => { edgesMat.resolution.set(size.width, size.height); }, [edgesMat, size]);
+
+  // 顶点球：共享 geometry/material（多个 mesh 引用同一实例，卸载一次释放）
+  const vertexGeo = useMemo(() => new THREE.SphereGeometry(0.1, 12, 12), []);
+  const vertexMat = useMemo(() => new THREE.MeshBasicMaterial({ color: edgeColor }), [edgeColor]);
+  useEffect(() => () => { vertexGeo.dispose(); vertexMat.dispose(); }, [vertexGeo, vertexMat]);
 
   useFrame(() => {
     if (!pointIds.some(id => getLive(id))) return;
@@ -1102,13 +1179,15 @@ function SolidEntity({ pts, color, getLive }: {
       return lv ? [lv.x, lv.y, lv.z] : [p.x, p.y, p.z];
     });
     if (edgesRef.current) {
-      const pos = edgesRef.current.geometry.attributes.position as THREE.BufferAttribute;
+      // LineSegmentsGeometry：instanceStart/instanceEnd 直改（拖动实时联动）
+      const st = edgesGeo.attributes.instanceStart as THREE.BufferAttribute;
+      const en = edgesGeo.attributes.instanceEnd as THREE.BufferAttribute;
       solidPairs(coords.length).forEach(([i, j], k) => {
-        const o = k * 2;
-        pos.setXYZ(o, coords[i][0], coords[i][1], coords[i][2]);
-        pos.setXYZ(o + 1, coords[j][0], coords[j][1], coords[j][2]);
+        st.setXYZ(k, coords[i][0], coords[i][1], coords[i][2]);
+        en.setXYZ(k, coords[j][0], coords[j][1], coords[j][2]);
       });
-      pos.needsUpdate = true;
+      st.needsUpdate = true;
+      en.needsUpdate = true;
     }
     if (facesRef.current && coords.length === 4) {
       const pos = facesRef.current.geometry.attributes.position as THREE.BufferAttribute;
@@ -1121,6 +1200,12 @@ function SolidEntity({ pts, color, getLive }: {
       pos.needsUpdate = true;
       facesRef.current.geometry.computeVertexNormals();
     }
+    // 顶点球跟随 live（拖动中点实时联动）
+    vertexRefs.current.forEach((m, i) => {
+      if (!m) return;
+      const lv = getLive(pointIds[i]);
+      m.position.set(lv ? lv.x : (pts[i]?.x ?? 0), lv ? lv.y : (pts[i]?.y ?? 0), lv ? lv.z : (pts[i]?.z ?? 0));
+    });
   });
 
   return (
@@ -1129,6 +1214,13 @@ function SolidEntity({ pts, color, getLive }: {
         <meshBasicMaterial color={color} transparent opacity={0.18} side={THREE.DoubleSide} />
       </mesh>
       <primitive ref={edgesRef} object={edgesObj} />
+      {/* 顶点球：棱线顶点亮色小球（点被隐藏时体仍完整；点可见时被点球覆盖无妨） */}
+      {pts.map((p, i) => (
+        <mesh key={i} ref={el => { vertexRefs.current[i] = el; }} position={[p.x, p.y, p.z]}>
+          <primitive object={vertexGeo} attach="geometry" />
+          <primitive object={vertexMat} attach="material" />
+        </mesh>
+      ))}
     </group>
   );
 }
@@ -1142,7 +1234,7 @@ function PresetObjects({ graph, isDark }: { graph: ReturnType<typeof parseGraphI
   return null;
 }
 
-// 一元函数曲线（画在 x-y 平面，函数值沿 Y）
+// 一元函数曲线（画在 x-y 平面，函数值沿 Y）；Line2 + LineMaterial 真实线宽（LineBasicMaterial 恒 1px 太细）
 function PresetCurve({ expr, variable, isDark }: { expr: string; variable: string; isDark: boolean }) {
   const points = useMemo(() => {
     const f = compileExpr(expr);
@@ -1157,13 +1249,22 @@ function PresetCurve({ expr, variable, isDark }: { expr: string; variable: strin
     }
     return pts;
   }, [expr, variable]);
+  const { size } = useThree();
   const { lineObj, cleanup } = useMemo(() => {
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
-    const m = new THREE.LineBasicMaterial({ color: isDark ? '#22d3ee' : '#0891b2' });
-    return { lineObj: new THREE.Line(g, m), cleanup: () => { g.dispose(); m.dispose(); } };
-  }, [points, isDark]);
+    if (points.length < 3) return { lineObj: null, cleanup: () => {} }; // 编译失败/无数据：不渲染
+    const g = new LineGeometry();
+    g.setPositions(points);
+    const m = new LineMaterial({
+      color: isDark ? '#22d3ee' : '#0891b2',
+      linewidth: 3,
+      resolution: new THREE.Vector2(size.width, size.height),
+    });
+    const o = new Line2(g, m);
+    o.frustumCulled = false;
+    return { lineObj: o, cleanup: () => { g.dispose(); m.dispose(); } };
+  }, [points, isDark, size.width, size.height]);
   useEffect(() => cleanup, [cleanup]);
+  if (!lineObj) return null;
   return <primitive object={lineObj} />;
 }
 
@@ -1198,19 +1299,53 @@ function PresetSurface({ expr, isDark }: { expr: string; isDark: boolean }) {
   );
 }
 
-// 三维体
+// 三维体（预置）：半透明体 + 棱线勾勒（LineSegments2 真实线宽；cube 12 条边、cylinder 上下圆边；sphere 光滑无棱线）
 function PresetSolid({ solid, isDark }: { solid: string; isDark: boolean }) {
   const color = isDark ? '#38bdf8' : '#0284c7';
+  const edgeColor = isDark ? '#f8fafc' : '#1e293b';
+  const { size } = useThree();
+  // 棱线材质（像素线宽 3，分辨率跟随画布）
+  const edgesMat = useMemo(() => new LineMaterial({
+    color: edgeColor,
+    linewidth: 3,
+    resolution: new THREE.Vector2(size.width, size.height),
+  }), [edgeColor]);
+  // EdgesGeometry → LineSegmentsGeometry（取棱边，与几何体尺寸一致）
+  const edgesGeo = useMemo(() => {
+    let src: THREE.BufferGeometry | null = null;
+    if (solid === 'cube') src = new THREE.EdgesGeometry(new THREE.BoxGeometry(2, 2, 2));
+    else if (solid === 'cylinder') src = new THREE.EdgesGeometry(new THREE.CylinderGeometry(1, 1, 2.2, 32));
+    if (!src) return null; // sphere 光滑面，无棱线
+    const g = new LineSegmentsGeometry();
+    g.setPositions(new Float32Array(src.attributes.position.array));
+    src.dispose();
+    return g;
+  }, [solid]);
+  useEffect(() => () => { edgesGeo?.dispose(); edgesMat.dispose(); }, [edgesGeo, edgesMat]);
+  useEffect(() => { edgesMat.resolution.set(size.width, size.height); }, [edgesMat, size]);
+  const edgesObj = useMemo(() => {
+    if (!edgesGeo) return null;
+    const o = new LineSegments2(edgesGeo, edgesMat);
+    o.frustumCulled = false;
+    return o;
+  }, [edgesGeo, edgesMat]);
+
   return (
     <group>
       {solid === 'cube' && (
-        <mesh><boxGeometry args={[2, 2, 2]} /><meshStandardMaterial color={color} transparent opacity={0.45} /></mesh>
+        <group>
+          <mesh><boxGeometry args={[2, 2, 2]} /><meshStandardMaterial color={color} transparent opacity={0.45} /></mesh>
+          {edgesObj && <primitive object={edgesObj} />}
+        </group>
       )}
       {solid === 'sphere' && (
         <mesh><sphereGeometry args={[1.3, 32, 32]} /><meshStandardMaterial color={color} transparent opacity={0.45} /></mesh>
       )}
       {solid === 'cylinder' && (
-        <mesh><cylinderGeometry args={[1, 1, 2.2, 32]} /><meshStandardMaterial color={color} transparent opacity={0.45} /></mesh>
+        <group>
+          <mesh><cylinderGeometry args={[1, 1, 2.2, 32]} /><meshStandardMaterial color={color} transparent opacity={0.45} /></mesh>
+          {edgesObj && <primitive object={edgesObj} />}
+        </group>
       )}
     </group>
   );

@@ -55,3 +55,15 @@ test-out3/
 test-complex.cjs
 test-out4/
 test-latex-check.cjs
+test-system.cjs
+test-out5/
+test-dim-switch.cjs
+test-axis-check.cjs
+test-solid-check.cjs
+test-out6/
+test-preset-solid.cjs
+test-color.cjs
+test-fat-diagnose.cjs
+test-linewidth.cjs
+test-out-lw/
+
